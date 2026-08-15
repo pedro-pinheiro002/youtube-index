@@ -7,7 +7,7 @@ import {
   MeilisearchProjection,
   SqliteLedger,
   YouTubeDataApiClient,
-  type TranscriptFetcher,
+  YoutubeTranscriptFetcher,
 } from "@youtube-index/domain";
 
 async function main(): Promise<void> {
@@ -17,7 +17,7 @@ async function main(): Promise<void> {
   const ledger = new SqliteLedger(db);
   const youtube = new YouTubeDataApiClient(config.youtubeApiKey);
 
-  const transcripts: TranscriptFetcher = { fetchTranscript: async () => null };
+  const transcripts = new YoutubeTranscriptFetcher();
   const projection = new MeilisearchProjection({ url: config.meiliUrl, masterKey: config.meiliMasterKey });
   const ingestion = createIngestion({ youtube, transcripts, ledger, projection });
 

@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { createDatabase } from "../src/schema.js";
 import { SqliteLedger } from "../src/ledger.js";
-import { rebuildCommentsProjection, rebuildVideosProjection } from "../src/rebuild.js";
+import {
+  rebuildCommentsProjection,
+  rebuildTranscriptsProjection,
+  rebuildVideosProjection,
+} from "../src/rebuild.js";
 import type { SearchDocument } from "../src/projection.js";
 
 const CHANNEL_ID = "UCY8iijN1AkyDCh1Z9akcqUA";
@@ -134,6 +138,60 @@ describe("rebuildCommentsProjection", () => {
     const projection = makeRecordingProjection();
 
     const count = await rebuildCommentsProjection(CHANNEL_ID, { ledger, projection });
+
+    expect(count).toBe(0);
+    expect(projection.calls).toHaveLength(0);
+  });
+});
+
+describe("rebuildTranscriptsProjection", () => {
+  it("reconstrói a Projeção de Segmentos a partir do SQLite sem chamar o YouTube", async () => {
+    const ledger = makeLedger();
+    makeChannelWithVideo(ledger);
+    ledger.upsertTranscriptSegment({
+      id: "v1:142",
+      videoId: "v1",
+      channelId: CHANNEL_ID,
+      videoTitle: "Primeiro vídeo",
+      videoPublishedAt: "2023-01-01T00:00:00Z",
+      start: 142,
+      end: 150,
+      text: "trecho da transcrição",
+    });
+    const projection = makeRecordingProjection();
+
+    const count = await rebuildTranscriptsProjection(CHANNEL_ID, { ledger, projection });
+
+    expect(count).toBe(1);
+    expect(projection.calls).toEqual([
+      {
+        channelId: CHANNEL_ID,
+        documents: [
+          expect.objectContaining({
+            id: "v1:142",
+            channelId: CHANNEL_ID,
+            type: "segment",
+            videoId: "v1",
+            videoTitle: "Primeiro vídeo",
+            videoUrl: "https://www.youtube.com/watch?v=v1",
+            videoThumbnail: "https://i.ytimg.com/vi/v1/hqdefault.jpg",
+            text: "trecho da transcrição",
+            start: 142,
+            end: 150,
+            url: "https://www.youtube.com/watch?v=v1&t=142s",
+            publishedAt: "2023-01-01T00:00:00Z",
+          }),
+        ],
+      },
+    ]);
+  });
+
+  it("devolve 0 sem chamar a Projeção quando o Canal não tem Segmentos", async () => {
+    const ledger = makeLedger();
+    makeChannelWithVideo(ledger);
+    const projection = makeRecordingProjection();
+
+    const count = await rebuildTranscriptsProjection(CHANNEL_ID, { ledger, projection });
 
     expect(count).toBe(0);
     expect(projection.calls).toHaveLength(0);

@@ -7,6 +7,7 @@ import type {
   Ledger,
   Projection,
   SearchDocument,
+  Transcript,
   TranscriptFetcher,
   YouTubeClient,
   YouTubeComment,
@@ -28,6 +29,10 @@ function makeLedger(): Ledger {
 
 function makeTranscriptFetcher(): TranscriptFetcher {
   return { fetchTranscript: async () => null };
+}
+
+function makeTranscriptFetcherWith(transcripts: Record<string, Transcript | null>): TranscriptFetcher {
+  return { fetchTranscript: async (videoId) => transcripts[videoId] ?? null };
 }
 
 function makeProjection(): Projection {
@@ -386,6 +391,164 @@ describe("createIngestion", () => {
     });
   });
 
+  describe("runTranscriptsPhase", () => {
+    function makeChannelWithVideos(): { ledger: Ledger; ingestion: ReturnType<typeof makeIngestion> } {
+      const ledger = makeLedger();
+      ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
+      const ingestion = makeIngestion(
+        makeYouTubeClient(
+          [
+            {
+              videos: [
+                video("v1", "Primeiro vídeo", "2023-01-01T00:00:00Z"),
+                video("v2", "Segundo vídeo", "2023-01-02T00:00:00Z"),
+              ],
+              nextPageToken: null,
+            },
+          ],
+          { v1: { views: 100, likes: 10, durationSeconds: 120 }, v2: { views: 200, likes: 20, durationSeconds: 240 } },
+        ),
+        ledger,
+      );
+      return { ledger, ingestion };
+    }
+
+    it("busca Transcrições pelo TranscriptFetcher e grava os Segmentos no Ledger com timestamp", async () => {
+      const { ledger, ingestion } = makeChannelWithVideos();
+      await ingestion.runVideosPhase(CHANNEL_ID);
+      const fetcher = makeTranscriptFetcherWith({
+        v1: {
+          videoId: "v1",
+          segments: [
+            { start: 0, duration: 10, text: "primeiro trecho" },
+            { start: 142, duration: 8, text: "trecho com deep-link" },
+          ],
+        },
+        v2: null,
+      });
+      const ingestionTranscripts = createIngestion({
+        youtube: makeYouTubeClient([], {}),
+        transcripts: fetcher,
+        ledger,
+        projection: makeProjection(),
+      });
+
+      await ingestionTranscripts.runTranscriptsPhase(CHANNEL_ID);
+
+      const segments = ledger.listTranscriptSegments(CHANNEL_ID);
+      expect(segments).toEqual([
+        expect.objectContaining({
+          id: "v1:0",
+          videoId: "v1",
+          channelId: CHANNEL_ID,
+          videoTitle: "Primeiro vídeo",
+          start: 0,
+          end: 10,
+          text: "primeiro trecho",
+        }),
+        expect.objectContaining({
+          id: "v1:142",
+          videoId: "v1",
+          channelId: CHANNEL_ID,
+          videoTitle: "Primeiro vídeo",
+          start: 142,
+          end: 150,
+          text: "trecho com deep-link",
+        }),
+      ]);
+      expect(ledger.getChannel(CHANNEL_ID)?.phases.transcripts).toMatchObject({
+        status: "completed",
+        done: 2,
+        total: 2,
+      });
+    });
+
+    it("projeta Documentos de Segmento com deep-link ao momento exato", async () => {
+      const { ledger, ingestion } = makeChannelWithVideos();
+      await ingestion.runVideosPhase(CHANNEL_ID);
+      const projection = makeRecordingProjection();
+      const fetcher = makeTranscriptFetcherWith({
+        v1: { videoId: "v1", segments: [{ start: 142, duration: 8, text: "trecho com deep-link" }] },
+      });
+      const ingestionTranscripts = createIngestion({
+        youtube: makeYouTubeClient([], {}),
+        transcripts: fetcher,
+        ledger,
+        projection,
+      });
+
+      await ingestionTranscripts.runTranscriptsPhase(CHANNEL_ID);
+
+      expect(projection.calls).toEqual([
+        {
+          channelId: CHANNEL_ID,
+          documents: [
+            expect.objectContaining({
+              id: "v1:142",
+              channelId: CHANNEL_ID,
+              type: "segment",
+              videoId: "v1",
+              videoTitle: "Primeiro vídeo",
+              videoUrl: "https://www.youtube.com/watch?v=v1",
+              videoThumbnail: "https://i.ytimg.com/vi/v1/hqdefault.jpg",
+              text: "trecho com deep-link",
+              start: 142,
+              end: 150,
+              url: "https://www.youtube.com/watch?v=v1&t=142s",
+              publishedAt: "2023-01-01T00:00:00Z",
+            }),
+          ],
+        },
+      ]);
+    });
+
+    it("marca Vídeos sem Transcrição no Ledger e não derruba a Fase", async () => {
+      const { ledger, ingestion } = makeChannelWithVideos();
+      await ingestion.runVideosPhase(CHANNEL_ID);
+      const fetcher = makeTranscriptFetcherWith({
+        v1: { videoId: "v1", segments: [{ start: 0, duration: 10, text: "único trecho" }] },
+        v2: null,
+      });
+      const ingestionTranscripts = createIngestion({
+        youtube: makeYouTubeClient([], {}),
+        transcripts: fetcher,
+        ledger,
+        projection: makeProjection(),
+      });
+
+      await ingestionTranscripts.runTranscriptsPhase(CHANNEL_ID);
+
+      expect(ledger.listTranscriptAbsences(CHANNEL_ID)).toEqual(["v2"]);
+      expect(ledger.listTranscriptSegments(CHANNEL_ID)).toHaveLength(1);
+      expect(ledger.getChannel(CHANNEL_ID)?.phases.transcripts).toMatchObject({
+        status: "completed",
+        done: 2,
+        total: 2,
+      });
+    });
+
+    it("conclui a Fase quando nenhum Vídeo tem Transcrição", async () => {
+      const { ledger, ingestion } = makeChannelWithVideos();
+      await ingestion.runVideosPhase(CHANNEL_ID);
+      const ingestionTranscripts = createIngestion({
+        youtube: makeYouTubeClient([], {}),
+        transcripts: makeTranscriptFetcher(),
+        ledger,
+        projection: makeProjection(),
+      });
+
+      await ingestionTranscripts.runTranscriptsPhase(CHANNEL_ID);
+
+      expect(ledger.listTranscriptSegments(CHANNEL_ID)).toEqual([]);
+      expect(ledger.listTranscriptAbsences(CHANNEL_ID)).toEqual(["v1", "v2"]);
+      expect(ledger.getChannel(CHANNEL_ID)?.phases.transcripts).toMatchObject({
+        status: "completed",
+        done: 2,
+        total: 2,
+      });
+    });
+  });
+
   describe("runJob", () => {
     it("marca o Canal como ingesting durante a Fase e completed ao final", async () => {
       const ledger = makeLedger();
@@ -426,8 +589,42 @@ describe("createIngestion", () => {
       expect(channel?.status).toBe("completed");
       expect(channel?.phases.videos).toMatchObject({ status: "completed", done: 1, total: 1 });
       expect(channel?.phases.comments).toMatchObject({ status: "completed", done: 1, total: 1 });
+      expect(channel?.phases.transcripts).toMatchObject({ status: "completed", done: 1, total: 1 });
       expect(ledger.listComments(CHANNEL_ID)).toHaveLength(1);
       expect(projection.calls.flatMap((c) => c.documents.map((d) => d.type))).toEqual(["video", "comment"]);
+    });
+
+    it("roda as três Fases e projeta Segmentos com deep-link", async () => {
+      const ledger = makeLedger();
+      ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
+      const projection = makeRecordingProjection();
+      const ingestion = createIngestion({
+        youtube: makeYouTubeClient(
+          [{ videos: [video("v1", "Um vídeo", "2023-01-01T00:00:00Z")], nextPageToken: null }],
+          { v1: { views: 1, likes: 0, durationSeconds: 10 } },
+        ),
+        transcripts: makeTranscriptFetcherWith({
+          v1: { videoId: "v1", segments: [{ start: 142, duration: 8, text: "trecho com deep-link" }] },
+        }),
+        ledger,
+        projection,
+      });
+
+      await ingestion.runJob(CHANNEL_ID);
+
+      const channel = ledger.getChannel(CHANNEL_ID);
+      expect(channel?.status).toBe("completed");
+      expect(channel?.phases.videos).toMatchObject({ status: "completed" });
+      expect(channel?.phases.comments).toMatchObject({ status: "completed" });
+      expect(channel?.phases.transcripts).toMatchObject({ status: "completed", done: 1, total: 1 });
+      const segmentDocs = projection.calls.flatMap((c) => c.documents).filter((d) => d.type === "segment");
+      expect(segmentDocs).toEqual([
+        expect.objectContaining({
+          id: "v1:142",
+          type: "segment",
+          url: "https://www.youtube.com/watch?v=v1&t=142s",
+        }),
+      ]);
     });
 
     it("marca o Canal como failed quando a Fase de Vídeos falha", async () => {

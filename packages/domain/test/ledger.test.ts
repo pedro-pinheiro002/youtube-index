@@ -246,4 +246,138 @@ describe("SqliteLedger", () => {
       expect(ledger.listComments(CHANNEL_ID)).toEqual([]);
     });
   });
+
+  describe("upsertTranscriptSegment / listTranscriptSegments", () => {
+    function makeChannelWithVideo(ledger: SqliteLedger) {
+      const channel = ledger.createChannel({
+        channelId: CHANNEL_ID,
+        handle: "@funkyblackcat",
+        title: "Funky Black Cat",
+      });
+      ledger.upsertVideo({
+        id: "v1",
+        channelId: CHANNEL_ID,
+        title: "Primeiro vídeo",
+        description: "Uma descrição",
+        publishedAt: "2023-01-01T00:00:00Z",
+        views: 100,
+        likes: 10,
+        durationSeconds: 120,
+      });
+      return channel;
+    }
+
+    it("grava um Segmento ligado ao Vídeo e o devolve com o contexto do Vídeo", () => {
+      const ledger = makeLedger();
+      makeChannelWithVideo(ledger);
+      ledger.upsertTranscriptSegment({
+        id: "v1:142",
+        videoId: "v1",
+        channelId: CHANNEL_ID,
+        videoTitle: "Primeiro vídeo",
+        videoPublishedAt: "2023-01-01T00:00:00Z",
+        start: 142,
+        end: 150,
+        text: "trecho da transcrição",
+      });
+
+      const segments = ledger.listTranscriptSegments(CHANNEL_ID);
+
+      expect(segments).toEqual([
+        expect.objectContaining({
+          id: "v1:142",
+          videoId: "v1",
+          channelId: CHANNEL_ID,
+          videoTitle: "Primeiro vídeo",
+          videoPublishedAt: "2023-01-01T00:00:00Z",
+          start: 142,
+          end: 150,
+          text: "trecho da transcrição",
+        }),
+      ]);
+    });
+
+    it("é idempotente quando o mesmo Segmento (vídeo + start) é gravado de novo", () => {
+      const ledger = makeLedger();
+      makeChannelWithVideo(ledger);
+      const segment = {
+        id: "v1:142",
+        videoId: "v1",
+        channelId: CHANNEL_ID,
+        videoTitle: "Primeiro vídeo",
+        videoPublishedAt: "2023-01-01T00:00:00Z",
+        start: 142,
+        end: 150,
+        text: "trecho da transcrição",
+      };
+
+      ledger.upsertTranscriptSegment(segment);
+      ledger.upsertTranscriptSegment(segment);
+
+      expect(ledger.listTranscriptSegments(CHANNEL_ID)).toHaveLength(1);
+    });
+
+    it("devolve lista vazia para um Canal sem Segmentos", () => {
+      const ledger = makeLedger();
+      makeChannelWithVideo(ledger);
+
+      expect(ledger.listTranscriptSegments(CHANNEL_ID)).toEqual([]);
+    });
+  });
+
+  describe("markTranscriptAbsent / listTranscriptAbsences", () => {
+    function makeChannelWithVideo(ledger: SqliteLedger) {
+      ledger.createChannel({
+        channelId: CHANNEL_ID,
+        handle: "@funkyblackcat",
+        title: "Funky Black Cat",
+      });
+      ledger.upsertVideo({
+        id: "v1",
+        channelId: CHANNEL_ID,
+        title: "Primeiro vídeo",
+        description: "Uma descrição",
+        publishedAt: "2023-01-01T00:00:00Z",
+        views: 100,
+        likes: 10,
+        durationSeconds: 120,
+      });
+      ledger.upsertVideo({
+        id: "v2",
+        channelId: CHANNEL_ID,
+        title: "Segundo vídeo",
+        description: "Outra descrição",
+        publishedAt: "2023-01-02T00:00:00Z",
+        views: 200,
+        likes: 20,
+        durationSeconds: 240,
+      });
+    }
+
+    it("marca um Vídeo sem Transcrição e o lista como ausência", () => {
+      const ledger = makeLedger();
+      makeChannelWithVideo(ledger);
+
+      ledger.markTranscriptAbsent("v1");
+
+      expect(ledger.listTranscriptAbsences(CHANNEL_ID)).toEqual(["v1"]);
+    });
+
+    it("é idempotente ao marcar a mesma ausência de novo", () => {
+      const ledger = makeLedger();
+      makeChannelWithVideo(ledger);
+
+      ledger.markTranscriptAbsent("v1");
+      ledger.markTranscriptAbsent("v1");
+
+      expect(ledger.listTranscriptAbsences(CHANNEL_ID)).toEqual(["v1"]);
+    });
+
+    it("devolve lista vazia quando nenhum Vídeo está sem Transcrição", () => {
+      const ledger = makeLedger();
+      makeChannelWithVideo(ledger);
+
+      expect(ledger.listTranscriptAbsences(CHANNEL_ID)).toEqual([]);
+    });
+  });
 });

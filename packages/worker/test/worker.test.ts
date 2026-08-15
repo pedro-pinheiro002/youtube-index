@@ -71,6 +71,7 @@ describe("pollOnce", () => {
       },
       runVideosPhase: async () => {},
       runCommentsPhase: async () => {},
+      runTranscriptsPhase: async () => {},
     };
 
     await expect(pollOnce({ ledger, ingestion: failingIngestion })).rejects.toThrow("cota esgotada");

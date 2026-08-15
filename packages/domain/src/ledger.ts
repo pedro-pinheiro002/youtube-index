@@ -30,6 +30,17 @@ export interface CommentRecord {
   publishedAt: string;
 }
 
+export interface TranscriptSegmentRecord {
+  id: string;
+  videoId: string;
+  channelId: string;
+  videoTitle: string;
+  videoPublishedAt: string;
+  start: number;
+  end: number;
+  text: string;
+}
+
 export interface Ledger {
   createChannel(input: CreateChannelInput): ChannelWithPhases;
   getChannel(channelId: string): ChannelWithPhases | null;
@@ -39,6 +50,10 @@ export interface Ledger {
   listVideos(channelId: string): VideoRecord[];
   upsertComment(comment: CommentRecord): void;
   listComments(channelId: string): CommentRecord[];
+  upsertTranscriptSegment(segment: TranscriptSegmentRecord): void;
+  listTranscriptSegments(channelId: string): TranscriptSegmentRecord[];
+  markTranscriptAbsent(videoId: string): void;
+  listTranscriptAbsences(channelId: string): string[];
   enqueueJob(channelId: string): Job;
   claimNextJob(): Job | null;
   completeJob(jobId: number): void;
@@ -238,6 +253,61 @@ export class SqliteLedger implements Ledger {
       likes: row.likes,
       publishedAt: row.published_at,
     }));
+  }
+
+  upsertTranscriptSegment(segment: TranscriptSegmentRecord): void {
+    this.db
+      .prepare(
+        "INSERT INTO transcript_segments (video_id, start_seconds, end_seconds, text) " +
+          "VALUES (?, ?, ?, ?) ON CONFLICT(video_id, start_seconds) DO NOTHING",
+      )
+      .run(segment.videoId, segment.start, segment.end, segment.text);
+  }
+
+  listTranscriptSegments(channelId: string): TranscriptSegmentRecord[] {
+    const rows = this.db
+      .prepare(
+        "SELECT t.video_id, t.start_seconds, t.end_seconds, t.text, v.channel_id, v.title AS video_title, " +
+          "v.published_at AS video_published_at " +
+          "FROM transcript_segments t JOIN videos v ON v.id = t.video_id " +
+          "WHERE v.channel_id = ? ORDER BY t.start_seconds",
+      )
+      .all(channelId) as unknown as Array<{
+      video_id: string;
+      start_seconds: number;
+      end_seconds: number;
+      text: string;
+      channel_id: string;
+      video_title: string;
+      video_published_at: string;
+    }>;
+    return rows.map((row) => ({
+      id: `${row.video_id}:${row.start_seconds}`,
+      videoId: row.video_id,
+      channelId: row.channel_id,
+      videoTitle: row.video_title,
+      videoPublishedAt: row.video_published_at,
+      start: row.start_seconds,
+      end: row.end_seconds,
+      text: row.text,
+    }));
+  }
+
+  markTranscriptAbsent(videoId: string): void {
+    const now = new Date().toISOString();
+    this.db
+      .prepare("INSERT INTO transcript_absences (video_id, created_at) VALUES (?, ?) ON CONFLICT(video_id) DO NOTHING")
+      .run(videoId, now);
+  }
+
+  listTranscriptAbsences(channelId: string): string[] {
+    const rows = this.db
+      .prepare(
+        "SELECT a.video_id FROM transcript_absences a JOIN videos v ON v.id = a.video_id " +
+          "WHERE v.channel_id = ? ORDER BY a.video_id",
+      )
+      .all(channelId) as unknown as Array<{ video_id: string }>;
+    return rows.map((row) => row.video_id);
   }
 
   enqueueJob(channelId: string): Job {

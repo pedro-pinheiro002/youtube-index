@@ -1,4 +1,4 @@
-import type { CommentRecord, VideoRecord } from "./ledger.js";
+import type { CommentRecord, TranscriptSegmentRecord, VideoRecord } from "./ledger.js";
 
 export type SearchDocumentType = "video" | "comment" | "segment";
 
@@ -32,6 +32,19 @@ export interface CommentSearchDocument extends SearchDocument {
   publishedAt: string;
 }
 
+export interface SegmentSearchDocument extends SearchDocument {
+  type: "segment";
+  videoId: string;
+  videoTitle: string;
+  videoUrl: string;
+  videoThumbnail: string;
+  text: string;
+  start: number;
+  end: number;
+  url: string;
+  publishedAt: string;
+}
+
 export interface Projection {
   addDocuments(channelId: string, documents: SearchDocument[]): Promise<void>;
 }
@@ -42,6 +55,10 @@ export function videoUrl(videoId: string): string {
 
 export function videoThumbnail(videoId: string): string {
   return `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
+}
+
+export function segmentUrl(videoId: string, start: number): string {
+  return `${videoUrl(videoId)}&t=${Math.floor(start)}s`;
 }
 
 export function toVideoDocument(video: VideoRecord): VideoSearchDocument {
@@ -73,5 +90,22 @@ export function toCommentDocument(comment: CommentRecord): CommentSearchDocument
     text: comment.text,
     likes: comment.likes,
     publishedAt: comment.publishedAt,
+  };
+}
+
+export function toSegmentDocument(segment: TranscriptSegmentRecord): SegmentSearchDocument {
+  return {
+    id: segment.id,
+    channelId: segment.channelId,
+    type: "segment",
+    videoId: segment.videoId,
+    videoTitle: segment.videoTitle,
+    videoUrl: videoUrl(segment.videoId),
+    videoThumbnail: videoThumbnail(segment.videoId),
+    text: segment.text,
+    start: segment.start,
+    end: segment.end,
+    url: segmentUrl(segment.videoId, segment.start),
+    publishedAt: segment.videoPublishedAt,
   };
 }

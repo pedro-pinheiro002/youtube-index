@@ -50,6 +50,14 @@ CREATE TABLE IF NOT EXISTS transcript_segments (
   text TEXT NOT NULL
 );
 
+CREATE UNIQUE INDEX IF NOT EXISTS transcript_segments_video_start
+  ON transcript_segments(video_id, start_seconds);
+
+CREATE TABLE IF NOT EXISTS transcript_absences (
+  video_id TEXT PRIMARY KEY REFERENCES videos(id) ON DELETE CASCADE,
+  created_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS ingestion_jobs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   channel_id TEXT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,

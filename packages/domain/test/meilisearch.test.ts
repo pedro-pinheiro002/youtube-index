@@ -254,6 +254,47 @@ describe("MeilisearchProjection", () => {
       expect(searchCall?.body).toMatchObject({ q: "comentário", filter: ["type = comment"] });
     });
 
+    it("devolve Segmentos com deep-link ao momento exato quando tipo=segment", async () => {
+      const responder = baseResponder();
+      const { fetchImpl, calls } = makeFetch((req) =>
+        req.url.endsWith("/search")
+          ? {
+              hits: [
+                {
+                  id: "v1:142",
+                  channelId: CHANNEL_ID,
+                  type: "segment",
+                  text: "trecho com deep-link",
+                  videoTitle: "Primeiro vídeo",
+                  start: 142,
+                  end: 150,
+                  url: "https://www.youtube.com/watch?v=v1&t=142s",
+                  _formatted: { text: "trecho com <em>deep-link</em>" },
+                },
+              ],
+              estimatedTotalHits: 1,
+            }
+          : responder(req),
+      );
+      const client = makeClient(fetchImpl);
+      await client.getOrCreateRestrictedSearchKey();
+
+      const result = await client.search({ q: "deep-link", channelId: CHANNEL_ID, tipo: "segment" });
+
+      expect(result.hits[0]).toEqual(
+        expect.objectContaining({
+          id: "v1:142",
+          type: "segment",
+          text: "trecho com deep-link",
+          start: 142,
+          url: "https://www.youtube.com/watch?v=v1&t=142s",
+          _formatted: { text: "trecho com <em>deep-link</em>" },
+        }),
+      );
+      const searchCall = calls.find((c) => c.url.endsWith("/search"));
+      expect(searchCall?.body).toMatchObject({ q: "deep-link", filter: ["type = segment"] });
+    });
+
     it("devolve resultados vazios quando o índice do Canal ainda não existe", async () => {
       const fetchImpl = async (input: string | URL | Request, init?: RequestInit) => {
         if (String(input).endsWith("/keys") && (init?.method ?? "GET") === "GET") {

@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { toCommentDocument, toVideoDocument, videoThumbnail, videoUrl } from "../src/projection.js";
+import {
+  segmentUrl,
+  toCommentDocument,
+  toSegmentDocument,
+  toVideoDocument,
+  videoThumbnail,
+  videoUrl,
+} from "../src/projection.js";
 
 const CHANNEL_ID = "UCY8iijN1AkyDCh1Z9akcqUA";
 
@@ -66,5 +73,39 @@ describe("toCommentDocument", () => {
       likes: 42,
       publishedAt: "2023-01-02T00:00:00Z",
     });
+  });
+});
+
+describe("toSegmentDocument", () => {
+  it("monta o Documento de Segmento com contexto do Vídeo e deep-link ao momento exato", () => {
+    const doc = toSegmentDocument({
+      id: "v1:142",
+      videoId: "v1",
+      channelId: CHANNEL_ID,
+      videoTitle: "Primeiro vídeo",
+      videoPublishedAt: "2023-01-01T00:00:00Z",
+      start: 142,
+      end: 150,
+      text: "trecho da transcrição",
+    });
+
+    expect(doc).toEqual({
+      id: "v1:142",
+      channelId: CHANNEL_ID,
+      type: "segment",
+      videoId: "v1",
+      videoTitle: "Primeiro vídeo",
+      videoUrl: "https://www.youtube.com/watch?v=v1",
+      videoThumbnail: "https://i.ytimg.com/vi/v1/hqdefault.jpg",
+      text: "trecho da transcrição",
+      start: 142,
+      end: 150,
+      url: "https://www.youtube.com/watch?v=v1&t=142s",
+      publishedAt: "2023-01-01T00:00:00Z",
+    });
+  });
+
+  it("deriva o deep-link do Segmento com &t=<start>s", () => {
+    expect(segmentUrl("abc123", 142)).toBe("https://www.youtube.com/watch?v=abc123&t=142s");
   });
 });

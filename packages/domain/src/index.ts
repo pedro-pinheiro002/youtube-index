@@ -9,7 +9,7 @@ export type {
   PhaseStatus,
 } from "./types.js";
 export { PHASES } from "./types.js";
-export type { CreateChannelInput, CommentRecord, Ledger, VideoRecord } from "./ledger.js";
+export type { CreateChannelInput, CommentRecord, Ledger, TranscriptSegmentRecord, VideoRecord } from "./ledger.js";
 export { SqliteLedger } from "./ledger.js";
 export { applySchema, createDatabase, openDatabase, SCHEMA } from "./schema.js";
 export type { Ingestion, IngestionDeps } from "./ingestion.js";
@@ -19,15 +19,28 @@ export type {
   Projection,
   SearchDocument,
   SearchDocumentType,
+  SegmentSearchDocument,
   VideoSearchDocument,
 } from "./projection.js";
-export { toCommentDocument, toVideoDocument, videoThumbnail, videoUrl } from "./projection.js";
+export {
+  segmentUrl,
+  toCommentDocument,
+  toSegmentDocument,
+  toVideoDocument,
+  videoThumbnail,
+  videoUrl,
+} from "./projection.js";
 export type { SearchHit, SearchParams, SearchPort, SearchResponse, SearchSort } from "./search.js";
-export type { RebuildCommentsDeps, RebuildDeps } from "./rebuild.js";
-export { rebuildCommentsProjection, rebuildVideosProjection } from "./rebuild.js";
+export type { RebuildCommentsDeps, RebuildDeps, RebuildTranscriptsDeps } from "./rebuild.js";
+export {
+  rebuildCommentsProjection,
+  rebuildTranscriptsProjection,
+  rebuildVideosProjection,
+} from "./rebuild.js";
 export type { MeilisearchConfig } from "./meilisearch.js";
 export { createMeilisearchProjection, MeilisearchError, MeilisearchProjection } from "./meilisearch.js";
 export type { Transcript, TranscriptFetcher, TranscriptSegment } from "./transcripts.js";
+export { YoutubeTranscriptFetcher } from "./transcripts.js";
 export type {
   ChannelResolution,
   UploadsPage,

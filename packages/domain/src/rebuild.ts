@@ -1,6 +1,6 @@
 import type { Ledger } from "./ledger.js";
 import type { Projection, SearchDocument } from "./projection.js";
-import { toCommentDocument, toVideoDocument } from "./projection.js";
+import { toCommentDocument, toSegmentDocument, toVideoDocument } from "./projection.js";
 
 export interface RebuildDeps {
   ledger: Pick<Ledger, "listVideos">;
@@ -31,4 +31,13 @@ export interface RebuildCommentsDeps {
 
 export async function rebuildCommentsProjection(channelId: string, deps: RebuildCommentsDeps): Promise<number> {
   return rebuildProjection(channelId, deps.ledger.listComments(channelId), toCommentDocument, deps.projection);
+}
+
+export interface RebuildTranscriptsDeps {
+  ledger: Pick<Ledger, "listTranscriptSegments">;
+  projection: Projection;
+}
+
+export async function rebuildTranscriptsProjection(channelId: string, deps: RebuildTranscriptsDeps): Promise<number> {
+  return rebuildProjection(channelId, deps.ledger.listTranscriptSegments(channelId), toSegmentDocument, deps.projection);
 }

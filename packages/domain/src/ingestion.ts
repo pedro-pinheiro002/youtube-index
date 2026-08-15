@@ -1,6 +1,6 @@
-import type { CommentRecord, Ledger, VideoRecord } from "./ledger.js";
+import type { CommentRecord, Ledger, TranscriptSegmentRecord, VideoRecord } from "./ledger.js";
 import type { Projection } from "./projection.js";
-import { toCommentDocument, toVideoDocument } from "./projection.js";
+import { toCommentDocument, toSegmentDocument, toVideoDocument } from "./projection.js";
 import type { TranscriptFetcher } from "./transcripts.js";
 import type { PhaseKey } from "./types.js";
 import { CommentsDisabledError, type YouTubeClient } from "./youtube.js";
@@ -16,6 +16,7 @@ export interface Ingestion {
   runJob(channelId: string): Promise<void>;
   runVideosPhase(channelId: string): Promise<void>;
   runCommentsPhase(channelId: string): Promise<void>;
+  runTranscriptsPhase(channelId: string): Promise<void>;
 }
 
 export function createIngestion(deps: IngestionDeps): Ingestion {
@@ -90,6 +91,40 @@ export function createIngestion(deps: IngestionDeps): Ingestion {
     deps.ledger.updatePhase(channelId, "comments", { status: "completed", total: done });
   }
 
+  async function runTranscriptsPhase(channelId: string): Promise<void> {
+    const videos = deps.ledger.listVideos(channelId);
+    deps.ledger.updatePhase(channelId, "transcripts", { status: "running" });
+
+    let done = 0;
+    const records: TranscriptSegmentRecord[] = [];
+    for (const video of videos) {
+      const transcript = await deps.transcripts.fetchTranscript(video.id);
+      if (transcript) {
+        for (const segment of transcript.segments) {
+          const record: TranscriptSegmentRecord = {
+            id: `${video.id}:${segment.start}`,
+            videoId: video.id,
+            channelId,
+            videoTitle: video.title,
+            videoPublishedAt: video.publishedAt,
+            start: segment.start,
+            end: segment.start + segment.duration,
+            text: segment.text,
+          };
+          deps.ledger.upsertTranscriptSegment(record);
+          records.push(record);
+        }
+      } else {
+        deps.ledger.markTranscriptAbsent(video.id);
+      }
+      done += 1;
+      deps.ledger.updatePhase(channelId, "transcripts", { done });
+    }
+
+    await deps.projection.addDocuments(channelId, records.map(toSegmentDocument));
+    deps.ledger.updatePhase(channelId, "transcripts", { status: "completed", total: done });
+  }
+
   async function runJob(channelId: string): Promise<void> {
     deps.ledger.setChannelStatus(channelId, "ingesting");
     let currentPhase: PhaseKey = "videos";
@@ -97,6 +132,8 @@ export function createIngestion(deps: IngestionDeps): Ingestion {
       await runVideosPhase(channelId);
       currentPhase = "comments";
       await runCommentsPhase(channelId);
+      currentPhase = "transcripts";
+      await runTranscriptsPhase(channelId);
     } catch (err) {
       deps.ledger.setChannelStatus(channelId, "failed");
       deps.ledger.updatePhase(channelId, currentPhase, { status: "failed" });
@@ -105,5 +142,5 @@ export function createIngestion(deps: IngestionDeps): Ingestion {
     deps.ledger.setChannelStatus(channelId, "completed");
   }
 
-  return { runJob, runVideosPhase, runCommentsPhase };
+  return { runJob, runVideosPhase, runCommentsPhase, runTranscriptsPhase };
 }
