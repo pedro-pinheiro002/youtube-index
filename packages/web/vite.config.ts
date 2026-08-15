@@ -7,6 +7,7 @@ export default defineConfig({
     port: 5173,
     proxy: {
       "/health": "http://localhost:3000",
+      "/channels": "http://localhost:3000",
     },
   },
 });
