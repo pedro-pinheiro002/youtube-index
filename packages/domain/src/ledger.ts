@@ -1,5 +1,5 @@
 import type { DatabaseSync } from "node:sqlite";
-import type { ChannelWithPhases, Job, PhaseKey, PhaseStatus } from "./types.js";
+import type { ChannelStatus, ChannelWithPhases, Job, PhaseKey, PhaseProgress, PhaseStatus } from "./types.js";
 import { PHASES } from "./types.js";
 
 export interface CreateChannelInput {
@@ -8,10 +8,28 @@ export interface CreateChannelInput {
   title: string;
 }
 
+export interface VideoRecord {
+  id: string;
+  channelId: string;
+  title: string;
+  description: string;
+  publishedAt: string;
+  views: number;
+  likes: number;
+  durationSeconds: number;
+}
+
 export interface Ledger {
   createChannel(input: CreateChannelInput): ChannelWithPhases;
   getChannel(channelId: string): ChannelWithPhases | null;
+  setChannelStatus(channelId: string, status: ChannelStatus): void;
+  updatePhase(channelId: string, phase: PhaseKey, update: Partial<Pick<PhaseProgress, "status" | "done" | "total">>): void;
+  upsertVideo(video: VideoRecord): void;
+  listVideos(channelId: string): VideoRecord[];
   enqueueJob(channelId: string): Job;
+  claimNextJob(): Job | null;
+  completeJob(jobId: number): void;
+  failJob(jobId: number): void;
   listJobs(channelId: string): Job[];
 }
 
@@ -94,6 +112,82 @@ export class SqliteLedger implements Ledger {
     };
   }
 
+  setChannelStatus(channelId: string, status: ChannelStatus): void {
+    this.db.prepare("UPDATE channels SET status = ? WHERE id = ?").run(status, channelId);
+  }
+
+  updatePhase(channelId: string, phase: PhaseKey, update: Partial<Pick<PhaseProgress, "status" | "done" | "total">>): void {
+    const sets: string[] = [];
+    const values: Array<string | number | null> = [];
+    if (update.status !== undefined) {
+      sets.push("status = ?");
+      values.push(update.status);
+    }
+    if (update.done !== undefined) {
+      sets.push("done = ?");
+      values.push(update.done);
+    }
+    if (update.total !== undefined) {
+      sets.push("total = ?");
+      values.push(update.total);
+    }
+    if (sets.length === 0) {
+      return;
+    }
+    values.push(channelId, phase);
+    this.db
+      .prepare(`UPDATE channel_phases SET ${sets.join(", ")} WHERE channel_id = ? AND phase = ?`)
+      .run(...values);
+  }
+
+  upsertVideo(video: VideoRecord): void {
+    const now = new Date().toISOString();
+    this.db
+      .prepare(
+        "INSERT INTO videos (id, channel_id, title, description, published_at, views, likes, duration_seconds, created_at) " +
+          "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING",
+      )
+      .run(
+        video.id,
+        video.channelId,
+        video.title,
+        video.description,
+        video.publishedAt,
+        video.views,
+        video.likes,
+        video.durationSeconds,
+        now,
+      );
+  }
+
+  listVideos(channelId: string): VideoRecord[] {
+    const rows = this.db
+      .prepare(
+        "SELECT id, channel_id, title, description, published_at, views, likes, duration_seconds " +
+          "FROM videos WHERE channel_id = ? ORDER BY published_at DESC",
+      )
+      .all(channelId) as unknown as Array<{
+      id: string;
+      channel_id: string;
+      title: string;
+      description: string;
+      published_at: string;
+      views: number;
+      likes: number;
+      duration_seconds: number;
+    }>;
+    return rows.map((row) => ({
+      id: row.id,
+      channelId: row.channel_id,
+      title: row.title,
+      description: row.description,
+      publishedAt: row.published_at,
+      views: row.views,
+      likes: row.likes,
+      durationSeconds: row.duration_seconds,
+    }));
+  }
+
   enqueueJob(channelId: string): Job {
     const now = new Date().toISOString();
     const result = this.db
@@ -101,6 +195,34 @@ export class SqliteLedger implements Ledger {
       .run(channelId, now);
     const id = Number(result.lastInsertRowid);
     return { id, channelId, status: "queued", createdAt: now };
+  }
+
+  claimNextJob(): Job | null {
+    const row = this.db
+      .prepare(
+        "SELECT id, channel_id, status, created_at FROM ingestion_jobs WHERE status = 'queued' ORDER BY id LIMIT 1",
+      )
+      .get() as unknown as
+      | {
+          id: number;
+          channel_id: string;
+          status: Job["status"];
+          created_at: string;
+        }
+      | undefined;
+    if (!row) {
+      return null;
+    }
+    this.db.prepare("UPDATE ingestion_jobs SET status = 'running' WHERE id = ?").run(row.id);
+    return { id: row.id, channelId: row.channel_id, status: "running", createdAt: row.created_at };
+  }
+
+  completeJob(jobId: number): void {
+    this.db.prepare("UPDATE ingestion_jobs SET status = 'completed' WHERE id = ?").run(jobId);
+  }
+
+  failJob(jobId: number): void {
+    this.db.prepare("UPDATE ingestion_jobs SET status = 'failed' WHERE id = ?").run(jobId);
   }
 
   listJobs(channelId: string): Job[] {

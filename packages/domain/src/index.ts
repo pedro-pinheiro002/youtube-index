@@ -9,8 +9,18 @@ export type {
   PhaseStatus,
 } from "./types.js";
 export { PHASES } from "./types.js";
-export type { CreateChannelInput, Ledger } from "./ledger.js";
+export type { CreateChannelInput, Ledger, VideoRecord } from "./ledger.js";
 export { SqliteLedger } from "./ledger.js";
 export { applySchema, createDatabase, openDatabase, SCHEMA } from "./schema.js";
-export type { ChannelResolution, YouTubeClient } from "./youtube.js";
-export { ChannelNotFoundError, YouTubeApiError, YouTubeDataApiClient } from "./youtube.js";
+export type { Ingestion, IngestionDeps } from "./ingestion.js";
+export { createIngestion } from "./ingestion.js";
+export type { SearchDocument, SearchDocumentType, Projection } from "./projection.js";
+export type { Transcript, TranscriptFetcher, TranscriptSegment } from "./transcripts.js";
+export type {
+  ChannelResolution,
+  UploadsPage,
+  YouTubeClient,
+  YouTubeVideo,
+  YouTubeVideoStats,
+} from "./youtube.js";
+export { ChannelNotFoundError, YouTubeApiError, YouTubeDataApiClient, parseIsoDuration } from "./youtube.js";

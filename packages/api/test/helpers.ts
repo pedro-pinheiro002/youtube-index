@@ -23,5 +23,14 @@ export function makeLedger(): Ledger {
 export function makeYouTubeClient(resolution?: { channelId: string; title: string }): YouTubeClient {
   return {
     resolveHandle: async () => resolution ?? { channelId: "UCY8iijN1AkyDCh1Z9akcqUA", title: "Funky Black Cat" },
+    getUploadsPlaylistId: async () => {
+      throw new Error("não usado neste teste");
+    },
+    listUploads: async () => {
+      throw new Error("não usado neste teste");
+    },
+    getVideoStats: async () => {
+      throw new Error("não usado neste teste");
+    },
   };
 }

@@ -77,6 +77,10 @@ importers:
         version: 4.1.10(@types/node@22.20.1)(vite@8.2.1(@types/node@22.20.1)(esbuild@0.28.2)(tsx@4.23.12))
 
   packages/worker:
+    dependencies:
+      '@youtube-index/domain':
+        specifier: workspace:*
+        version: link:../domain
     devDependencies:
       '@types/node':
         specifier: ^22.20.0
