@@ -1,0 +1,58 @@
+services:
+  meilisearch:
+    image: getmeili/meilisearch:v1.53.1
+    environment:
+      # Master key fica apenas nos contêineres de servidor, nunca no browser.
+      # A porta 7700 não é publicada: a api é a única porta de acesso ao Meilisearch.
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:-youtube-index-dev-master-key}
+      MEILI_ENV: production
+    volumes:
+      - meili_data:/meili_data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7700/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+  api:
+    build: .
+    depends_on:
+      meilisearch:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    environment:
+      HOST: 0.0.0.0
+      PORT: 3000
+      MEILI_URL: http://meilisearch:7700
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:-youtube-index-dev-master-key}
+      WEB_DIST_DIR: /app/packages/web/dist
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+  worker:
+    build: .
+    command: ["node", "packages/worker/dist/index.js"]
+    depends_on:
+      meilisearch:
+        condition: service_healthy
+    ports:
+      - "8081:8081"
+    environment:
+      WORKER_HEALTH_PORT: 8081
+      MEILI_URL: http://meilisearch:7700
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:-youtube-index-dev-master-key}
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:8081/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+volumes:
+  meili_data:
