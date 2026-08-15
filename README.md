@@ -4,7 +4,8 @@ Aplicativo de busca local para indexar e buscar o conteúdo de um Canal do YouTu
 
 ## Estrutura
 
-- `packages/api` — API Fastify (`/health`, serve o frontend estático em produção)
+- `packages/domain` — domínio compartilhado: schema SQLite (Fonte da verdade), Ledger e clientes de portas
+- `packages/api` — API Fastify (`/health`, `/channels`, serve o frontend estático em produção)
 - `packages/worker` — processo separado que executa as fases de Ingestão (health em `:8081`)
 - `packages/web` — frontend React/Vite
 
@@ -18,6 +19,19 @@ pnpm dev
 - web: http://localhost:5173
 - api: http://localhost:3000/health
 - worker: http://localhost:8081/health
+
+### Variáveis de ambiente
+
+Copie `.env.example` para `.env` e ajuste:
+
+- `MEILI_MASTER_KEY` — master key do Meilisearch (fica apenas no servidor)
+- `YOUTUBE_API_KEY` — chave da YouTube Data API (resolução de handle e Ingestão)
+- `DB_PATH` — caminho do SQLite (Fonte da verdade); padrão `data/youtube-index.db`
+
+### Endpoints
+
+- `POST /channels {"handle":"@funkyblackcat"}` — resolve o `channelId`, cria o Canal no SQLite e enfileira um job de Ingestão
+- `GET /channels/:id` — status do Canal e progresso por Fase (vídeos, Comentários, Transcrições)
 
 ## Docker compose
 

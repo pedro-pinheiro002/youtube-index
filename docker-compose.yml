@@ -28,6 +28,10 @@ services:
       MEILI_URL: http://meilisearch:7700
       MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:-youtube-index-dev-master-key}
       WEB_DIST_DIR: /app/packages/web/dist
+      DB_PATH: /app/data/youtube-index.db
+      YOUTUBE_API_KEY: ${YOUTUBE_API_KEY:-}
+    volumes:
+      - db_data:/app/data
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://localhost:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 5s
@@ -47,6 +51,9 @@ services:
       WORKER_HEALTH_PORT: 8081
       MEILI_URL: http://meilisearch:7700
       MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:-youtube-index-dev-master-key}
+      DB_PATH: /app/data/youtube-index.db
+    volumes:
+      - db_data:/app/data
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://localhost:8081/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 5s
@@ -56,3 +63,4 @@ services:
 
 volumes:
   meili_data:
+  db_data:
