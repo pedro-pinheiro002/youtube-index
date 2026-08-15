@@ -8,6 +8,7 @@ export default defineConfig({
     proxy: {
       "/health": "http://localhost:3000",
       "/channels": "http://localhost:3000",
+      "/search": "http://localhost:3000",
     },
   },
 });

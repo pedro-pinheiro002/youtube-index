@@ -197,6 +197,8 @@ describe("SqliteLedger", () => {
         videoId: "v1",
         channelId: CHANNEL_ID,
         videoTitle: "Primeiro vídeo",
+        videoViews: 100,
+        videoLikes: 10,
         author: "Gato Funky",
         text: "Primeiro comentário",
         likes: 42,
@@ -217,6 +219,7 @@ describe("SqliteLedger", () => {
           publishedAt: "2023-01-02T00:00:00Z",
         }),
       ]);
+      expect(comments[0]).toMatchObject({ videoViews: 100, videoLikes: 10 });
     });
 
     it("é idempotente quando o mesmo id de Comentário é gravado de novo", () => {
@@ -227,6 +230,8 @@ describe("SqliteLedger", () => {
         videoId: "v1",
         channelId: CHANNEL_ID,
         videoTitle: "Primeiro vídeo",
+        videoViews: 100,
+        videoLikes: 10,
         author: "Gato Funky",
         text: "Primeiro comentário",
         likes: 42,
@@ -275,6 +280,8 @@ describe("SqliteLedger", () => {
         videoId: "v1",
         channelId: CHANNEL_ID,
         videoTitle: "Primeiro vídeo",
+        videoViews: 100,
+        videoLikes: 10,
         videoPublishedAt: "2023-01-01T00:00:00Z",
         start: 142,
         end: 150,
@@ -295,6 +302,7 @@ describe("SqliteLedger", () => {
           text: "trecho da transcrição",
         }),
       ]);
+      expect(segments[0]).toMatchObject({ videoViews: 100, videoLikes: 10 });
     });
 
     it("é idempotente quando o mesmo Segmento (vídeo + start) é gravado de novo", () => {
@@ -305,6 +313,8 @@ describe("SqliteLedger", () => {
         videoId: "v1",
         channelId: CHANNEL_ID,
         videoTitle: "Primeiro vídeo",
+        videoViews: 100,
+        videoLikes: 10,
         videoPublishedAt: "2023-01-01T00:00:00Z",
         start: 142,
         end: 150,
@@ -495,6 +505,8 @@ describe("SqliteLedger", () => {
         videoId: "v1",
         channelId: CHANNEL_ID,
         videoTitle: "Primeiro vídeo",
+        videoViews: 100,
+        videoLikes: 10,
         author: "Gato Funky",
         text: "Primeiro comentário",
         likes: 42,
@@ -545,6 +557,8 @@ describe("SqliteLedger", () => {
         videoId: "v1",
         channelId: CHANNEL_ID,
         videoTitle: "Vídeo v1",
+        videoViews: 100,
+        videoLikes: 10,
         author: "A",
         text: "Comentário de v1",
         likes: 1,
@@ -555,6 +569,8 @@ describe("SqliteLedger", () => {
         videoId: "v2",
         channelId: CHANNEL_ID,
         videoTitle: "Vídeo v2",
+        videoViews: 100,
+        videoLikes: 10,
         author: "B",
         text: "Comentário de v2",
         likes: 2,
@@ -594,6 +610,8 @@ describe("SqliteLedger", () => {
         videoId: "v1",
         channelId: CHANNEL_ID,
         videoTitle: "Primeiro vídeo",
+        videoViews: 100,
+        videoLikes: 10,
         videoPublishedAt: "2023-01-01T00:00:00Z",
         start: 0,
         end: 10,

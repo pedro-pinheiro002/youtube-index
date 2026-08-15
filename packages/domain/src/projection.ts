@@ -26,6 +26,9 @@ export interface CommentSearchDocument extends SearchDocument {
   videoTitle: string;
   videoUrl: string;
   videoThumbnail: string;
+  videoViews: number;
+  videoLikes: number;
+  url: string;
   author: string;
   text: string;
   likes: number;
@@ -38,6 +41,8 @@ export interface SegmentSearchDocument extends SearchDocument {
   videoTitle: string;
   videoUrl: string;
   videoThumbnail: string;
+  videoViews: number;
+  videoLikes: number;
   text: string;
   start: number;
   end: number;
@@ -59,6 +64,10 @@ export function videoThumbnail(videoId: string): string {
 
 export function segmentUrl(videoId: string, start: number): string {
   return `${videoUrl(videoId)}&t=${Math.floor(start)}s`;
+}
+
+export function commentUrl(videoId: string, commentId: string): string {
+  return `${videoUrl(videoId)}&lc=${encodeURIComponent(commentId)}`;
 }
 
 export function toVideoDocument(video: VideoRecord): VideoSearchDocument {
@@ -86,6 +95,9 @@ export function toCommentDocument(comment: CommentRecord): CommentSearchDocument
     videoTitle: comment.videoTitle,
     videoUrl: videoUrl(comment.videoId),
     videoThumbnail: videoThumbnail(comment.videoId),
+    videoViews: comment.videoViews,
+    videoLikes: comment.videoLikes,
+    url: commentUrl(comment.videoId, comment.id),
     author: comment.author,
     text: comment.text,
     likes: comment.likes,
@@ -102,6 +114,8 @@ export function toSegmentDocument(segment: TranscriptSegmentRecord): SegmentSear
     videoTitle: segment.videoTitle,
     videoUrl: videoUrl(segment.videoId),
     videoThumbnail: videoThumbnail(segment.videoId),
+    videoViews: segment.videoViews,
+    videoLikes: segment.videoLikes,
     text: segment.text,
     start: segment.start,
     end: segment.end,

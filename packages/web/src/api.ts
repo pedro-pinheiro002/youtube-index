@@ -1,4 +1,9 @@
-import type { ChannelWithPhases } from "./types";
+import type {
+  ChannelWithPhases,
+  SearchDocumentType,
+  SearchResponse,
+  SearchSort,
+} from "./types";
 
 async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, init);
@@ -19,4 +24,22 @@ export function createChannel(handle: string): Promise<ChannelWithPhases> {
 
 export function getChannel(id: string): Promise<ChannelWithPhases> {
   return requestJson<ChannelWithPhases>(`/channels/${encodeURIComponent(id)}`);
+}
+
+export interface SearchChannelParams {
+  q: string;
+  channelId: string;
+  tipo?: SearchDocumentType;
+  sort?: SearchSort;
+}
+
+export function searchChannel(params: SearchChannelParams): Promise<SearchResponse> {
+  const query = new URLSearchParams({ q: params.q, channelId: params.channelId });
+  if (params.tipo) {
+    query.set("tipo", params.tipo);
+  }
+  if (params.sort) {
+    query.set("sort", params.sort);
+  }
+  return requestJson<SearchResponse>(`/search?${query.toString()}`);
 }

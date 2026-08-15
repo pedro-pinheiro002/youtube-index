@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  commentUrl,
   segmentUrl,
   toCommentDocument,
   toSegmentDocument,
@@ -48,12 +49,14 @@ describe("toVideoDocument", () => {
 });
 
 describe("toCommentDocument", () => {
-  it("monta o Documento de Comentário com contexto denormalizado do Vídeo", () => {
+  it("monta o Documento de Comentário com contexto do Vídeo e deep-link ao Comentário", () => {
     const doc = toCommentDocument({
       id: "c1",
       videoId: "v1",
       channelId: CHANNEL_ID,
       videoTitle: "Primeiro vídeo",
+      videoViews: 1234,
+      videoLikes: 56,
       author: "Gato Funky",
       text: "Primeiro comentário",
       likes: 42,
@@ -68,11 +71,18 @@ describe("toCommentDocument", () => {
       videoTitle: "Primeiro vídeo",
       videoUrl: "https://www.youtube.com/watch?v=v1",
       videoThumbnail: "https://i.ytimg.com/vi/v1/hqdefault.jpg",
+      videoViews: 1234,
+      videoLikes: 56,
+      url: "https://www.youtube.com/watch?v=v1&lc=c1",
       author: "Gato Funky",
       text: "Primeiro comentário",
       likes: 42,
       publishedAt: "2023-01-02T00:00:00Z",
     });
+  });
+
+  it("deriva o deep-link do Comentário com &lc=<id do Comentário>", () => {
+    expect(commentUrl("abc123", "Ugx1234")).toBe("https://www.youtube.com/watch?v=abc123&lc=Ugx1234");
   });
 });
 
@@ -83,6 +93,8 @@ describe("toSegmentDocument", () => {
       videoId: "v1",
       channelId: CHANNEL_ID,
       videoTitle: "Primeiro vídeo",
+      videoViews: 1234,
+      videoLikes: 56,
       videoPublishedAt: "2023-01-01T00:00:00Z",
       start: 142,
       end: 150,
@@ -97,6 +109,8 @@ describe("toSegmentDocument", () => {
       videoTitle: "Primeiro vídeo",
       videoUrl: "https://www.youtube.com/watch?v=v1",
       videoThumbnail: "https://i.ytimg.com/vi/v1/hqdefault.jpg",
+      videoViews: 1234,
+      videoLikes: 56,
       text: "trecho da transcrição",
       start: 142,
       end: 150,

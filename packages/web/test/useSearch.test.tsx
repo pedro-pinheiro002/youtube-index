@@ -1,0 +1,95 @@
+import { act, renderHook, waitFor } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
+import { useSearch } from "../src/useSearch";
+import { makeSearchApi, makeSearchResponse } from "./helpers";
+
+const CHANNEL_ID = "UCY8iijN1AkyDCh1Z9akcqUA";
+
+describe("useSearch", () => {
+  it("submit busca com a consulta e o canal, ordenando por relevância por padrão", async () => {
+    const searchChannel = vi.fn().mockResolvedValue(makeSearchResponse());
+    const api = makeSearchApi({ searchChannel });
+    const { result } = renderHook(() => useSearch({ channelId: CHANNEL_ID, api }));
+
+    act(() => result.current.setQuery("gato"));
+    act(() => result.current.submit());
+
+    await waitFor(() => expect(result.current.results?.total).toBe(1));
+    expect(searchChannel).toHaveBeenCalledWith({ q: "gato", channelId: CHANNEL_ID, sort: "relevance" });
+  });
+
+  it("mudar o tipo re-executa a busca da última consulta com o filtro", async () => {
+    const searchChannel = vi.fn().mockResolvedValue(makeSearchResponse());
+    const api = makeSearchApi({ searchChannel });
+    const { result } = renderHook(() => useSearch({ channelId: CHANNEL_ID, api }));
+
+    act(() => result.current.setQuery("gato"));
+    act(() => result.current.submit());
+    await waitFor(() => expect(searchChannel).toHaveBeenCalledTimes(1));
+
+    act(() => result.current.setTipo("comment"));
+    await waitFor(() => expect(searchChannel).toHaveBeenCalledTimes(2));
+
+    expect(searchChannel.mock.calls[1]?.[0]).toEqual({
+      q: "gato",
+      channelId: CHANNEL_ID,
+      tipo: "comment",
+      sort: "relevance",
+    });
+  });
+
+  it("mudar a ordenação re-executa a busca da última consulta", async () => {
+    const searchChannel = vi.fn().mockResolvedValue(makeSearchResponse());
+    const api = makeSearchApi({ searchChannel });
+    const { result } = renderHook(() => useSearch({ channelId: CHANNEL_ID, api }));
+
+    act(() => result.current.setQuery("gato"));
+    act(() => result.current.submit());
+    await waitFor(() => expect(searchChannel).toHaveBeenCalledTimes(1));
+
+    act(() => result.current.setSort("publishedAt"));
+    await waitFor(() => expect(searchChannel).toHaveBeenCalledTimes(2));
+
+    expect(searchChannel.mock.calls[1]?.[0]).toEqual({
+      q: "gato",
+      channelId: CHANNEL_ID,
+      sort: "publishedAt",
+    });
+  });
+
+  it("expõe o erro da API quando a busca falha", async () => {
+    const searchChannel = vi.fn().mockRejectedValue(new Error("Canal não encontrado"));
+    const api = makeSearchApi({ searchChannel });
+    const { result } = renderHook(() => useSearch({ channelId: CHANNEL_ID, api }));
+
+    act(() => result.current.setQuery("gato"));
+    act(() => result.current.submit());
+
+    await waitFor(() => expect(result.current.error).toBe("Canal não encontrado"));
+    expect(result.current.results).toBeNull();
+    expect(result.current.searching).toBe(false);
+  });
+
+  it("ignora respostas fora de ordem quando filtros mudam durante a busca", async () => {
+    const searchChannel = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) =>
+            setTimeout(() => resolve(makeSearchResponse({ query: "gato", hits: [], total: 99 })), 50),
+          ),
+      )
+      .mockImplementationOnce(() => Promise.resolve(makeSearchResponse({ query: "gato", total: 1 })));
+    const api = makeSearchApi({ searchChannel });
+    const { result } = renderHook(() => useSearch({ channelId: CHANNEL_ID, api }));
+
+    act(() => result.current.setQuery("gato"));
+    act(() => result.current.submit());
+    act(() => result.current.setTipo("video"));
+
+    await waitFor(() => expect(result.current.results?.total).toBe(1));
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(result.current.results?.total).toBe(1);
+    expect(result.current.searching).toBe(false);
+  });
+});

@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { App } from "../src/App";
 import type { ChannelWithPhases } from "../src/types";
-import { makeApi, makeChannel } from "./helpers";
+import { makeApi, makeChannel, makeSearchApi } from "./helpers";
 
 describe("App", () => {
   it("renderiza o título do aplicativo", () => {
@@ -54,5 +54,46 @@ describe("App", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Canal não encontrado para handle '@nao-existe'",
     );
+  });
+
+  it("mostra a Busca do Canal depois que o handle é informado", async () => {
+    const user = userEvent.setup();
+    const api = makeApi({ createChannel: async () => makeChannel("completed") });
+    const searchApi = makeSearchApi();
+
+    render(<App api={api} searchApi={searchApi} pollIntervalMs={50} />);
+
+    await user.type(screen.getByLabelText("@handle do Canal"), "@funkyblackcat");
+    await user.click(screen.getByRole("button", { name: "Ingerir canal" }));
+
+    expect(await screen.findByRole("heading", { name: "Busca" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Buscar")).toBeInTheDocument();
+  });
+
+  it("busca por palavra-chave no canal recém-criado", async () => {
+    const user = userEvent.setup();
+    const api = makeApi({ createChannel: async () => makeChannel("completed") });
+    const searchChannel = vi.fn().mockResolvedValue({
+      hits: [],
+      total: 0,
+      query: "gato",
+    });
+    const searchApi = makeSearchApi({ searchChannel });
+
+    render(<App api={api} searchApi={searchApi} pollIntervalMs={50} />);
+
+    await user.type(screen.getByLabelText("@handle do Canal"), "@funkyblackcat");
+    await user.click(screen.getByRole("button", { name: "Ingerir canal" }));
+
+    await user.type(await screen.findByLabelText("Buscar"), "gato");
+    await user.click(screen.getByRole("button", { name: "Buscar" }));
+
+    await waitFor(() => {
+      expect(searchChannel).toHaveBeenCalledWith({
+        q: "gato",
+        channelId: "UCY8iijN1AkyDCh1Z9akcqUA",
+        sort: "relevance",
+      });
+    });
   });
 });
