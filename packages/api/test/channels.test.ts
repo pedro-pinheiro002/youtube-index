@@ -83,6 +83,9 @@ describe("POST /channels", () => {
       getVideoStats: async () => {
         throw new Error("não usado neste teste");
       },
+      listComments: async () => {
+        throw new Error("não usado neste teste");
+      },
     };
     const app = buildApp(makeConfig(), { ledger: makeLedger(), youtube, search: makeSearchClient() });
 

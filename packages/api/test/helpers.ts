@@ -45,5 +45,8 @@ export function makeYouTubeClient(resolution?: { channelId: string; title: strin
     getVideoStats: async () => {
       throw new Error("não usado neste teste");
     },
+    listComments: async () => {
+      throw new Error("não usado neste teste");
+    },
   };
 }

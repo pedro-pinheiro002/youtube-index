@@ -30,6 +30,7 @@ function makeIngestion(ledger: Ledger): Ingestion {
     }),
     getVideoStats: async (videoId) =>
       videoId === "v1" ? { views: 100, likes: 10, durationSeconds: 120 } : { views: 200, likes: 20, durationSeconds: 240 },
+    listComments: async () => [],
   };
   const transcripts: TranscriptFetcher = { fetchTranscript: async () => null };
   const projection: Projection = { addDocuments: async () => {} };
@@ -69,6 +70,7 @@ describe("pollOnce", () => {
         throw new Error("cota esgotada");
       },
       runVideosPhase: async () => {},
+      runCommentsPhase: async () => {},
     };
 
     await expect(pollOnce({ ledger, ingestion: failingIngestion })).rejects.toThrow("cota esgotada");

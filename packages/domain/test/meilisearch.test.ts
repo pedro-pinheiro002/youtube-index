@@ -217,6 +217,43 @@ describe("MeilisearchProjection", () => {
       expect(searchCall?.body).toMatchObject({ filter: ["type = video"], sort: ["publishedAt:desc"] });
     });
 
+    it("devolve Comentários com destaque e aceita filtro por tipo comment", async () => {
+      const responder = baseResponder();
+      const { fetchImpl, calls } = makeFetch((req) =>
+        req.url.endsWith("/search")
+          ? {
+              hits: [
+                {
+                  id: "c1",
+                  channelId: CHANNEL_ID,
+                  type: "comment",
+                  author: "Gato Funky",
+                  text: "Primeiro comentário",
+                  videoTitle: "Primeiro vídeo",
+                  _formatted: { text: "Primeiro <em>comentário</em>" },
+                },
+              ],
+              estimatedTotalHits: 1,
+            }
+          : responder(req),
+      );
+      const client = makeClient(fetchImpl);
+      await client.getOrCreateRestrictedSearchKey();
+
+      const result = await client.search({ q: "comentário", channelId: CHANNEL_ID, tipo: "comment" });
+
+      expect(result.hits[0]).toEqual(
+        expect.objectContaining({
+          id: "c1",
+          type: "comment",
+          author: "Gato Funky",
+          _formatted: { text: "Primeiro <em>comentário</em>" },
+        }),
+      );
+      const searchCall = calls.find((c) => c.url.endsWith("/search"));
+      expect(searchCall?.body).toMatchObject({ q: "comentário", filter: ["type = comment"] });
+    });
+
     it("devolve resultados vazios quando o índice do Canal ainda não existe", async () => {
       const fetchImpl = async (input: string | URL | Request, init?: RequestInit) => {
         if (String(input).endsWith("/keys") && (init?.method ?? "GET") === "GET") {

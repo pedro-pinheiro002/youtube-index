@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { toVideoDocument, videoThumbnail, videoUrl } from "../src/projection.js";
+import { toCommentDocument, toVideoDocument, videoThumbnail, videoUrl } from "../src/projection.js";
 
 const CHANNEL_ID = "UCY8iijN1AkyDCh1Z9akcqUA";
 
@@ -37,5 +37,34 @@ describe("toVideoDocument", () => {
 
   it("deriva a thumbnail do Vídeo", () => {
     expect(videoThumbnail("abc123")).toBe("https://i.ytimg.com/vi/abc123/hqdefault.jpg");
+  });
+});
+
+describe("toCommentDocument", () => {
+  it("monta o Documento de Comentário com contexto denormalizado do Vídeo", () => {
+    const doc = toCommentDocument({
+      id: "c1",
+      videoId: "v1",
+      channelId: CHANNEL_ID,
+      videoTitle: "Primeiro vídeo",
+      author: "Gato Funky",
+      text: "Primeiro comentário",
+      likes: 42,
+      publishedAt: "2023-01-02T00:00:00Z",
+    });
+
+    expect(doc).toEqual({
+      id: "c1",
+      channelId: CHANNEL_ID,
+      type: "comment",
+      videoId: "v1",
+      videoTitle: "Primeiro vídeo",
+      videoUrl: "https://www.youtube.com/watch?v=v1",
+      videoThumbnail: "https://i.ytimg.com/vi/v1/hqdefault.jpg",
+      author: "Gato Funky",
+      text: "Primeiro comentário",
+      likes: 42,
+      publishedAt: "2023-01-02T00:00:00Z",
+    });
   });
 });

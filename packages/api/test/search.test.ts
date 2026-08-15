@@ -55,6 +55,37 @@ describe("GET /search", () => {
     expect(search.calls).toEqual([{ q: "x", channelId: CHANNEL_ID, tipo: "video", sort: "publishedAt" }]);
   });
 
+  it("retorna Comentários com destaque quando tipo=comment", async () => {
+    const ledger = makeLedger();
+    ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
+    const commentResults: SearchResponse = {
+      hits: [
+        {
+          id: "c1",
+          channelId: CHANNEL_ID,
+          type: "comment",
+          author: "Gato Funky",
+          text: "Primeiro comentário",
+          videoTitle: "Primeiro vídeo",
+          _formatted: { text: "Primeiro <em>comentário</em>" },
+        },
+      ],
+      total: 1,
+      query: "comentário",
+    };
+    const search = makeSearchClient(commentResults);
+    const app = buildApp(makeConfig(), { ledger, youtube: makeYouTubeClient(), search });
+
+    const res = await app.inject({
+      method: "GET",
+      url: `/search?q=comentário&channelId=${CHANNEL_ID}&tipo=comment`,
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual(commentResults);
+    expect(search.calls).toEqual([{ q: "comentário", channelId: CHANNEL_ID, tipo: "comment" }]);
+  });
+
   it("responde 400 quando q é obrigatório", async () => {
     const app = buildApp(makeConfig(), { ledger: makeLedger(), youtube: makeYouTubeClient(), search: makeSearchClient() });
 

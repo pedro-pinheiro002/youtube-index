@@ -1,8 +1,9 @@
-import type { Ledger, VideoRecord } from "./ledger.js";
+import type { CommentRecord, Ledger, VideoRecord } from "./ledger.js";
 import type { Projection } from "./projection.js";
-import { toVideoDocument } from "./projection.js";
+import { toCommentDocument, toVideoDocument } from "./projection.js";
 import type { TranscriptFetcher } from "./transcripts.js";
-import type { YouTubeClient } from "./youtube.js";
+import type { PhaseKey } from "./types.js";
+import { CommentsDisabledError, type YouTubeClient } from "./youtube.js";
 
 export interface IngestionDeps {
   youtube: YouTubeClient;
@@ -14,6 +15,7 @@ export interface IngestionDeps {
 export interface Ingestion {
   runJob(channelId: string): Promise<void>;
   runVideosPhase(channelId: string): Promise<void>;
+  runCommentsPhase(channelId: string): Promise<void>;
 }
 
 export function createIngestion(deps: IngestionDeps): Ingestion {
@@ -52,17 +54,56 @@ export function createIngestion(deps: IngestionDeps): Ingestion {
     deps.ledger.updatePhase(channelId, "videos", { status: "completed", total: done });
   }
 
+  async function runCommentsPhase(channelId: string): Promise<void> {
+    const videos = deps.ledger.listVideos(channelId);
+    deps.ledger.updatePhase(channelId, "comments", { status: "running" });
+
+    let done = 0;
+    const records: CommentRecord[] = [];
+    for (const video of videos) {
+      try {
+        const comments = await deps.youtube.listComments(video.id);
+        for (const comment of comments) {
+          const record: CommentRecord = {
+            id: comment.id,
+            videoId: video.id,
+            channelId,
+            videoTitle: video.title,
+            author: comment.author,
+            text: comment.text,
+            likes: comment.likes,
+            publishedAt: comment.publishedAt,
+          };
+          deps.ledger.upsertComment(record);
+          records.push(record);
+        }
+      } catch (err) {
+        if (!(err instanceof CommentsDisabledError)) {
+          throw err;
+        }
+      }
+      done += 1;
+      deps.ledger.updatePhase(channelId, "comments", { done });
+    }
+
+    await deps.projection.addDocuments(channelId, records.map(toCommentDocument));
+    deps.ledger.updatePhase(channelId, "comments", { status: "completed", total: done });
+  }
+
   async function runJob(channelId: string): Promise<void> {
     deps.ledger.setChannelStatus(channelId, "ingesting");
+    let currentPhase: PhaseKey = "videos";
     try {
       await runVideosPhase(channelId);
+      currentPhase = "comments";
+      await runCommentsPhase(channelId);
     } catch (err) {
       deps.ledger.setChannelStatus(channelId, "failed");
-      deps.ledger.updatePhase(channelId, "videos", { status: "failed" });
+      deps.ledger.updatePhase(channelId, currentPhase, { status: "failed" });
       throw err;
     }
     deps.ledger.setChannelStatus(channelId, "completed");
   }
 
-  return { runJob, runVideosPhase };
+  return { runJob, runVideosPhase, runCommentsPhase };
 }

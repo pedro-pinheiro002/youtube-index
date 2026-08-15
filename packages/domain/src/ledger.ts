@@ -19,6 +19,17 @@ export interface VideoRecord {
   durationSeconds: number;
 }
 
+export interface CommentRecord {
+  id: string;
+  videoId: string;
+  channelId: string;
+  videoTitle: string;
+  author: string;
+  text: string;
+  likes: number;
+  publishedAt: string;
+}
+
 export interface Ledger {
   createChannel(input: CreateChannelInput): ChannelWithPhases;
   getChannel(channelId: string): ChannelWithPhases | null;
@@ -26,6 +37,8 @@ export interface Ledger {
   updatePhase(channelId: string, phase: PhaseKey, update: Partial<Pick<PhaseProgress, "status" | "done" | "total">>): void;
   upsertVideo(video: VideoRecord): void;
   listVideos(channelId: string): VideoRecord[];
+  upsertComment(comment: CommentRecord): void;
+  listComments(channelId: string): CommentRecord[];
   enqueueJob(channelId: string): Job;
   claimNextJob(): Job | null;
   completeJob(jobId: number): void;
@@ -185,6 +198,45 @@ export class SqliteLedger implements Ledger {
       views: row.views,
       likes: row.likes,
       durationSeconds: row.duration_seconds,
+    }));
+  }
+
+  upsertComment(comment: CommentRecord): void {
+    const now = new Date().toISOString();
+    this.db
+      .prepare(
+        "INSERT INTO comments (id, video_id, author, text, likes, published_at, created_at) " +
+          "VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING",
+      )
+      .run(comment.id, comment.videoId, comment.author, comment.text, comment.likes, comment.publishedAt, now);
+  }
+
+  listComments(channelId: string): CommentRecord[] {
+    const rows = this.db
+      .prepare(
+        "SELECT c.id, c.video_id, v.channel_id, v.title AS video_title, c.author, c.text, c.likes, c.published_at " +
+          "FROM comments c JOIN videos v ON v.id = c.video_id " +
+          "WHERE v.channel_id = ? ORDER BY c.published_at DESC",
+      )
+      .all(channelId) as unknown as Array<{
+      id: string;
+      video_id: string;
+      channel_id: string;
+      video_title: string;
+      author: string;
+      text: string;
+      likes: number;
+      published_at: string;
+    }>;
+    return rows.map((row) => ({
+      id: row.id,
+      videoId: row.video_id,
+      channelId: row.channel_id,
+      videoTitle: row.video_title,
+      author: row.author,
+      text: row.text,
+      likes: row.likes,
+      publishedAt: row.published_at,
     }));
   }
 

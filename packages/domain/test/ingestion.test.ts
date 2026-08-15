@@ -2,12 +2,14 @@ import { describe, expect, it } from "vitest";
 import { createDatabase } from "../src/schema.js";
 import { SqliteLedger } from "../src/ledger.js";
 import { createIngestion } from "../src/ingestion.js";
+import { CommentsDisabledError } from "../src/youtube.js";
 import type {
   Ledger,
   Projection,
+  SearchDocument,
   TranscriptFetcher,
-  VideoSearchDocument,
   YouTubeClient,
+  YouTubeComment,
   YouTubeVideo,
   YouTubeVideoStats,
 } from "../src/index.js";
@@ -33,16 +35,20 @@ function makeProjection(): Projection {
 }
 
 function makeRecordingProjection() {
-  const calls: Array<{ channelId: string; documents: VideoSearchDocument[] }> = [];
+  const calls: Array<{ channelId: string; documents: SearchDocument[] }> = [];
   return {
-    addDocuments: async (channelId: string, documents: VideoSearchDocument[]) => {
+    addDocuments: async (channelId: string, documents: SearchDocument[]) => {
       calls.push({ channelId, documents });
     },
     calls,
   };
 }
 
-function makeYouTubeClient(pages: FakePage[], stats: Record<string, YouTubeVideoStats>): YouTubeClient {
+function makeYouTubeClient(
+  pages: FakePage[],
+  stats: Record<string, YouTubeVideoStats>,
+  comments: Record<string, YouTubeComment[] | Error> = {},
+): YouTubeClient {
   const byToken = new Map<string | null, FakePage>();
   for (let i = 0; i < pages.length; i++) {
     byToken.set(i === 0 ? null : pages[i - 1]!.nextPageToken, pages[i]!);
@@ -56,6 +62,13 @@ function makeYouTubeClient(pages: FakePage[], stats: Record<string, YouTubeVideo
       return page;
     },
     getVideoStats: async (videoId) => stats[videoId] ?? null,
+    listComments: async (videoId) => {
+      const entry = comments[videoId];
+      if (entry instanceof Error) {
+        throw entry;
+      }
+      return entry ?? [];
+    },
   };
 }
 
@@ -236,6 +249,143 @@ describe("createIngestion", () => {
     });
   });
 
+  describe("runCommentsPhase", () => {
+    function makeChannelWithVideos(): { ledger: Ledger; ingestion: ReturnType<typeof makeIngestion> } {
+      const ledger = makeLedger();
+      ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
+      const ingestion = makeIngestion(
+        makeYouTubeClient(
+          [
+            {
+              videos: [
+                video("v1", "Primeiro vídeo", "2023-01-01T00:00:00Z"),
+                video("v2", "Segundo vídeo", "2023-01-02T00:00:00Z"),
+              ],
+              nextPageToken: null,
+            },
+          ],
+          { v1: { views: 100, likes: 10, durationSeconds: 120 }, v2: { views: 200, likes: 20, durationSeconds: 240 } },
+        ),
+        ledger,
+      );
+      return { ledger, ingestion };
+    }
+
+    it("busca Comentários por Vídeo e os grava no Ledger com contexto do Vídeo", async () => {
+      const { ledger, ingestion } = makeChannelWithVideos();
+      await ingestion.runVideosPhase(CHANNEL_ID);
+      const youtube = makeYouTubeClient([], {}, {
+        v1: [{ id: "c1", author: "Gato Funky", text: "Primeiro comentário", likes: 42, publishedAt: "2023-01-02T00:00:00Z" }],
+        v2: [{ id: "c2", author: "Cão Legal", text: "Segundo comentário", likes: 7, publishedAt: "2023-01-03T00:00:00Z" }],
+      });
+      const ingestionComments = createIngestion({ youtube, transcripts: makeTranscriptFetcher(), ledger, projection: makeProjection() });
+
+      await ingestionComments.runCommentsPhase(CHANNEL_ID);
+
+      const stored = ledger.listComments(CHANNEL_ID);
+      expect(stored).toHaveLength(2);
+      expect(stored).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: "c1",
+            videoId: "v1",
+            channelId: CHANNEL_ID,
+            videoTitle: "Primeiro vídeo",
+            author: "Gato Funky",
+            text: "Primeiro comentário",
+            likes: 42,
+          }),
+          expect.objectContaining({
+            id: "c2",
+            videoId: "v2",
+            videoTitle: "Segundo vídeo",
+            author: "Cão Legal",
+          }),
+        ]),
+      );
+      expect(ledger.getChannel(CHANNEL_ID)?.phases.comments).toMatchObject({
+        status: "completed",
+        done: 2,
+        total: 2,
+      });
+    });
+
+    it("projeta Documentos de Comentário com contexto denormalizado do Vídeo", async () => {
+      const { ledger, ingestion } = makeChannelWithVideos();
+      await ingestion.runVideosPhase(CHANNEL_ID);
+      const projection = makeRecordingProjection();
+      const youtube = makeYouTubeClient([], {}, {
+        v1: [{ id: "c1", author: "Gato Funky", text: "Primeiro comentário", likes: 42, publishedAt: "2023-01-02T00:00:00Z" }],
+      });
+      const ingestionComments = createIngestion({ youtube, transcripts: makeTranscriptFetcher(), ledger, projection });
+
+      await ingestionComments.runCommentsPhase(CHANNEL_ID);
+
+      expect(projection.calls).toEqual([
+        {
+          channelId: CHANNEL_ID,
+          documents: [
+            expect.objectContaining({
+              id: "c1",
+              channelId: CHANNEL_ID,
+              type: "comment",
+              videoId: "v1",
+              videoTitle: "Primeiro vídeo",
+              videoUrl: "https://www.youtube.com/watch?v=v1",
+              videoThumbnail: "https://i.ytimg.com/vi/v1/hqdefault.jpg",
+              author: "Gato Funky",
+              text: "Primeiro comentário",
+              likes: 42,
+            }),
+          ],
+        },
+      ]);
+    });
+
+    it("pula Vídeos com Comentários desativados sem derrubar a Fase", async () => {
+      const { ledger, ingestion } = makeChannelWithVideos();
+      await ingestion.runVideosPhase(CHANNEL_ID);
+      const projection = makeRecordingProjection();
+      const youtube = makeYouTubeClient([], {}, {
+        v1: new CommentsDisabledError("v1"),
+        v2: [{ id: "c2", author: "Cão Legal", text: "Segundo comentário", likes: 7, publishedAt: "2023-01-03T00:00:00Z" }],
+      });
+      const ingestionComments = createIngestion({ youtube, transcripts: makeTranscriptFetcher(), ledger, projection });
+
+      await ingestionComments.runCommentsPhase(CHANNEL_ID);
+
+      const stored = ledger.listComments(CHANNEL_ID);
+      expect(stored).toHaveLength(1);
+      expect(stored[0]).toMatchObject({ id: "c2" });
+      expect(ledger.getChannel(CHANNEL_ID)?.phases.comments).toMatchObject({
+        status: "completed",
+        done: 2,
+        total: 2,
+      });
+    });
+
+    it("conclui a Fase quando nenhum Vídeo tem Comentários", async () => {
+      const { ledger, ingestion } = makeChannelWithVideos();
+      await ingestion.runVideosPhase(CHANNEL_ID);
+      const projection = makeRecordingProjection();
+      const ingestionComments = createIngestion({
+        youtube: makeYouTubeClient([], {}),
+        transcripts: makeTranscriptFetcher(),
+        ledger,
+        projection,
+      });
+
+      await ingestionComments.runCommentsPhase(CHANNEL_ID);
+
+      expect(ledger.listComments(CHANNEL_ID)).toEqual([]);
+      expect(ledger.getChannel(CHANNEL_ID)?.phases.comments).toMatchObject({
+        status: "completed",
+        done: 2,
+        total: 2,
+      });
+    });
+  });
+
   describe("runJob", () => {
     it("marca o Canal como ingesting durante a Fase e completed ao final", async () => {
       const ledger = makeLedger();
@@ -255,6 +405,31 @@ describe("createIngestion", () => {
       expect(channel?.phases.videos).toMatchObject({ status: "completed", done: 1, total: 1 });
     });
 
+    it("marca o Canal como completed ao final e roda também a Fase de Comentários", async () => {
+      const ledger = makeLedger();
+      ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
+      const projection = makeRecordingProjection();
+      const ingestion = createIngestion({
+        youtube: makeYouTubeClient(
+          [{ videos: [video("v1", "Um vídeo", "2023-01-01T00:00:00Z")], nextPageToken: null }],
+          { v1: { views: 1, likes: 0, durationSeconds: 10 } },
+          { v1: [{ id: "c1", author: "Gato Funky", text: "Primeiro comentário", likes: 5, publishedAt: "2023-01-02T00:00:00Z" }] },
+        ),
+        transcripts: makeTranscriptFetcher(),
+        ledger,
+        projection,
+      });
+
+      await ingestion.runJob(CHANNEL_ID);
+
+      const channel = ledger.getChannel(CHANNEL_ID);
+      expect(channel?.status).toBe("completed");
+      expect(channel?.phases.videos).toMatchObject({ status: "completed", done: 1, total: 1 });
+      expect(channel?.phases.comments).toMatchObject({ status: "completed", done: 1, total: 1 });
+      expect(ledger.listComments(CHANNEL_ID)).toHaveLength(1);
+      expect(projection.calls.flatMap((c) => c.documents.map((d) => d.type))).toEqual(["video", "comment"]);
+    });
+
     it("marca o Canal como failed quando a Fase de Vídeos falha", async () => {
       const ledger = makeLedger();
       ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
@@ -267,6 +442,9 @@ describe("createIngestion", () => {
           throw new Error("não deve chegar aqui");
         },
         getVideoStats: async () => {
+          throw new Error("não deve chegar aqui");
+        },
+        listComments: async () => {
           throw new Error("não deve chegar aqui");
         },
       };

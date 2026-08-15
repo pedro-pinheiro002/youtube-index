@@ -21,6 +21,14 @@ export interface YouTubeVideoStats {
   durationSeconds: number;
 }
 
+export interface YouTubeComment {
+  id: string;
+  author: string;
+  text: string;
+  likes: number;
+  publishedAt: string;
+}
+
 export class ChannelNotFoundError extends Error {
   constructor(handle: string) {
     super(`Canal não encontrado para handle '${handle}'`);
@@ -35,11 +43,19 @@ export class YouTubeApiError extends Error {
   }
 }
 
+export class CommentsDisabledError extends Error {
+  constructor(videoId: string) {
+    super(`Comentários desativados para o Vídeo '${videoId}'`);
+    this.name = "CommentsDisabledError";
+  }
+}
+
 export interface YouTubeClient {
   resolveHandle(handle: string): Promise<ChannelResolution>;
   getUploadsPlaylistId(channelId: string): Promise<string>;
   listUploads(playlistId: string, pageToken?: string | null): Promise<UploadsPage>;
   getVideoStats(videoId: string): Promise<YouTubeVideoStats | null>;
+  listComments(videoId: string): Promise<YouTubeComment[]>;
 }
 
 interface ChannelsListResponse {
@@ -80,6 +96,30 @@ interface VideosListResponse {
       likeCount?: string;
     };
   }>;
+}
+
+interface CommentThreadsListResponse {
+  items?: Array<{
+    snippet?: {
+      topLevelComment?: {
+        id?: string;
+        snippet?: {
+          authorDisplayName?: string;
+          textOriginal?: string;
+          likeCount?: string;
+          publishedAt?: string;
+        };
+      };
+    };
+  }>;
+}
+
+interface ApiErrorBody {
+  error?: {
+    errors?: Array<{
+      reason?: string;
+    }>;
+  };
 }
 
 export class YouTubeDataApiClient implements YouTubeClient {
@@ -177,6 +217,43 @@ export class YouTubeDataApiClient implements YouTubeClient {
       likes: Number(item.statistics?.likeCount ?? 0),
       durationSeconds: parseIsoDuration(item.contentDetails?.duration ?? "PT0S"),
     };
+  }
+
+  async listComments(videoId: string): Promise<YouTubeComment[]> {
+    const url = new URL("https://www.googleapis.com/youtube/v3/commentThreads");
+    url.searchParams.set("part", "snippet");
+    url.searchParams.set("videoId", videoId);
+    url.searchParams.set("maxResults", "50");
+    url.searchParams.set("order", "relevance");
+    url.searchParams.set("key", this.apiKey);
+
+    const res = await this.fetchImpl(url);
+    if (!res.ok) {
+      if (res.status === 403) {
+        const data = (await res.json().catch(() => null)) as ApiErrorBody | null;
+        if (data?.error?.errors?.some((error) => error.reason === "commentsDisabled")) {
+          throw new CommentsDisabledError(videoId);
+        }
+      }
+      throw new YouTubeApiError(
+        `YouTube API respondeu ${res.status} ao buscar Comentários de '${videoId}'`,
+        res.status,
+      );
+    }
+    const data = (await res.json()) as CommentThreadsListResponse;
+    return (data.items ?? [])
+      .filter((item) => item.snippet?.topLevelComment?.id)
+      .map((item) => {
+        const comment = item.snippet!.topLevelComment!;
+        const snippet = comment.snippet ?? {};
+        return {
+          id: comment.id!,
+          author: snippet.authorDisplayName ?? "",
+          text: snippet.textOriginal ?? "",
+          likes: Number(snippet.likeCount ?? 0),
+          publishedAt: snippet.publishedAt ?? "",
+        };
+      });
   }
 }
 

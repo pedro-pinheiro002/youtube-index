@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { ChannelNotFoundError, YouTubeApiError, YouTubeDataApiClient, parseIsoDuration } from "../src/youtube.js";
+import {
+  ChannelNotFoundError,
+  CommentsDisabledError,
+  YouTubeApiError,
+  YouTubeDataApiClient,
+  parseIsoDuration,
+} from "../src/youtube.js";
 
 function okResponse(body: unknown): Response {
   return new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
@@ -184,6 +190,100 @@ describe("YouTubeDataApiClient", () => {
       const stats = await client.getVideoStats("v1");
 
       expect(stats).toBeNull();
+    });
+  });
+
+  describe("listComments", () => {
+    it("busca os top-50 Comentários mais relevantes, somente nível superior", async () => {
+      const fetchImpl = async (url: string | URL | Request) => {
+        const u = new URL(String(url));
+        expect(u.pathname).toBe("/youtube/v3/commentThreads");
+        expect(u.searchParams.get("part")).toBe("snippet");
+        expect(u.searchParams.get("videoId")).toBe("v1");
+        expect(u.searchParams.get("maxResults")).toBe("50");
+        expect(u.searchParams.get("order")).toBe("relevance");
+        return okResponse({
+          items: [
+            {
+              id: "thread-1",
+              snippet: {
+                topLevelComment: {
+                  id: "c1",
+                  snippet: {
+                    authorDisplayName: "Gato Funky",
+                    textOriginal: "Primeiro comentário",
+                    likeCount: 42,
+                    publishedAt: "2023-01-02T00:00:00Z",
+                  },
+                },
+              },
+            },
+            {
+              id: "thread-2",
+              snippet: {
+                topLevelComment: {
+                  id: "c2",
+                  snippet: {
+                    authorDisplayName: "Cão Legal",
+                    textOriginal: "Segundo comentário",
+                    likeCount: 7,
+                    publishedAt: "2023-01-03T00:00:00Z",
+                  },
+                },
+              },
+            },
+          ],
+        });
+      };
+      const client = new YouTubeDataApiClient("test-key", fetchImpl);
+
+      const comments = await client.listComments("v1");
+
+      expect(comments).toEqual([
+        {
+          id: "c1",
+          author: "Gato Funky",
+          text: "Primeiro comentário",
+          likes: 42,
+          publishedAt: "2023-01-02T00:00:00Z",
+        },
+        {
+          id: "c2",
+          author: "Cão Legal",
+          text: "Segundo comentário",
+          likes: 7,
+          publishedAt: "2023-01-03T00:00:00Z",
+        },
+      ]);
+    });
+
+    it("devolve lista vazia quando o Vídeo não tem Comentários", async () => {
+      const fetchImpl = async () => okResponse({ items: [] });
+      const client = new YouTubeDataApiClient("test-key", fetchImpl);
+
+      const comments = await client.listComments("v1");
+
+      expect(comments).toEqual([]);
+    });
+
+    it("lança CommentsDisabledError quando os Comentários do Vídeo estão desativados", async () => {
+      const fetchImpl = async () =>
+        new Response(
+          JSON.stringify({
+            error: { errors: [{ reason: "commentsDisabled" }], message: "The comments are disabled for this video." },
+          }),
+          { status: 403, headers: { "content-type": "application/json" } },
+        );
+      const client = new YouTubeDataApiClient("test-key", fetchImpl);
+
+      await expect(client.listComments("v1")).rejects.toBeInstanceOf(CommentsDisabledError);
+    });
+
+    it("lança YouTubeApiError em falha de API fora de Comentários desativados", async () => {
+      const fetchImpl = async () => new Response("{}", { status: 403 });
+      const client = new YouTubeDataApiClient("test-key", fetchImpl);
+
+      await expect(client.listComments("v1")).rejects.toBeInstanceOf(YouTubeApiError);
     });
   });
 
