@@ -1,0 +1,3 @@
+# Transcrição segmentada em Documentos com timestamp
+
+A Transcrição é fatiada nos trechos que o youtube-transcript-api já entrega, cada um virando um Documento com timestamp de início. Isso habilita o deep-link ao momento exato do Vídeo (`&t=142s`), em vez de indexar a transcrição como um blob único por Vídeo. Custa muito mais documentos (~330k), volume que o Meilisearch local suporta sem problema.
