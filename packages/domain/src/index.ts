@@ -14,7 +14,13 @@ export { SqliteLedger } from "./ledger.js";
 export { applySchema, createDatabase, openDatabase, SCHEMA } from "./schema.js";
 export type { Ingestion, IngestionDeps } from "./ingestion.js";
 export { createIngestion } from "./ingestion.js";
-export type { SearchDocument, SearchDocumentType, Projection } from "./projection.js";
+export type { Projection, SearchDocument, SearchDocumentType, VideoSearchDocument } from "./projection.js";
+export { toVideoDocument, videoThumbnail, videoUrl } from "./projection.js";
+export type { SearchHit, SearchParams, SearchPort, SearchResponse, SearchSort } from "./search.js";
+export type { RebuildDeps } from "./rebuild.js";
+export { rebuildVideosProjection } from "./rebuild.js";
+export type { MeilisearchConfig } from "./meilisearch.js";
+export { createMeilisearchProjection, MeilisearchError, MeilisearchProjection } from "./meilisearch.js";
 export type { Transcript, TranscriptFetcher, TranscriptSegment } from "./transcripts.js";
 export type {
   ChannelResolution,

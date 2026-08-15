@@ -1,5 +1,5 @@
 import { createDatabase, SqliteLedger } from "@youtube-index/domain";
-import type { Ledger, YouTubeClient } from "@youtube-index/domain";
+import type { Ledger, SearchParams, SearchPort, SearchResponse, YouTubeClient } from "@youtube-index/domain";
 import type { AppConfig } from "../src/config.js";
 
 export function makeConfig(overrides: Partial<AppConfig> = {}): AppConfig {
@@ -18,6 +18,19 @@ export function makeConfig(overrides: Partial<AppConfig> = {}): AppConfig {
 
 export function makeLedger(): Ledger {
   return new SqliteLedger(createDatabase(":memory:"));
+}
+
+export function makeSearchClient(
+  results?: SearchResponse,
+): { search: SearchPort["search"]; calls: SearchParams[] } {
+  const calls: SearchParams[] = [];
+  return {
+    search: async (params: SearchParams): Promise<SearchResponse> => {
+      calls.push(params);
+      return results ?? { hits: [], total: 0, query: params.q };
+    },
+    calls,
+  };
 }
 
 export function makeYouTubeClient(resolution?: { channelId: string; title: string }): YouTubeClient {

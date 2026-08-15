@@ -3,11 +3,13 @@ import fastifyStatic from "@fastify/static";
 import { existsSync } from "node:fs";
 import type { AppConfig } from "./config.js";
 import { registerChannelRoutes } from "./channels.js";
-import type { Ledger, YouTubeClient } from "@youtube-index/domain";
+import { registerSearchRoutes } from "./search.js";
+import type { Ledger, SearchPort, YouTubeClient } from "@youtube-index/domain";
 
 export interface AppDeps {
   ledger: Ledger;
   youtube: YouTubeClient;
+  search: SearchPort;
 }
 
 export function buildApp(config: AppConfig, deps: AppDeps): FastifyInstance {
@@ -16,6 +18,7 @@ export function buildApp(config: AppConfig, deps: AppDeps): FastifyInstance {
   app.get("/health", async () => ({ status: "ok" }));
 
   void registerChannelRoutes(app, deps);
+  void registerSearchRoutes(app, deps);
 
   if (config.webDistDir && existsSync(config.webDistDir)) {
     void app.register(fastifyStatic, { root: config.webDistDir });

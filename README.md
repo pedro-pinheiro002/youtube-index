@@ -4,9 +4,9 @@ Aplicativo de busca local para indexar e buscar o conteúdo de um Canal do YouTu
 
 ## Estrutura
 
-- `packages/domain` — domínio compartilhado: schema SQLite (Fonte da verdade), Ledger e clientes de portas
-- `packages/api` — API Fastify (`/health`, `/channels`, serve o frontend estático em produção)
-- `packages/worker` — processo separado que executa as fases de Ingestão (health em `:8081`)
+- `packages/domain` — domínio compartilhado: schema SQLite (Fonte da verdade), Ledger, clientes de portas e a Projeção Meilisearch (com rebuild a partir do SQLite)
+- `packages/api` — API Fastify (`/health`, `/channels`, `/search`, serve o frontend estático em produção)
+- `packages/worker` — processo separado que executa as fases de Ingestão e projeta os Documentos no Meilisearch (health em `:8081`)
 - `packages/web` — frontend React/Vite
 
 ## Desenvolvimento
@@ -32,6 +32,7 @@ Copie `.env.example` para `.env` e ajuste:
 
 - `POST /channels {"handle":"@funkyblackcat"}` — resolve o `channelId`, cria o Canal no SQLite e enfileira um job de Ingestão
 - `GET /channels/:id` — status do Canal e progresso por Fase (vídeos, Comentários, Transcrições)
+- `GET /search?q=&channelId=&tipo=&sort=` — pass-through para o Meilisearch com chave restrita; devolve Vídeos com highlight em `_formatted` (`channelId` é obrigatório — um índice por Canal; `tipo` ∈ `video|comment|segment`; `sort` ∈ `relevance|publishedAt`)
 
 ## Docker compose
 

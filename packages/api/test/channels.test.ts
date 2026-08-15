@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { buildApp } from "../src/app.js";
 import { ChannelNotFoundError, type YouTubeClient } from "@youtube-index/domain";
-import { makeConfig, makeLedger, makeYouTubeClient } from "./helpers.js";
+import { makeConfig, makeLedger, makeSearchClient, makeYouTubeClient } from "./helpers.js";
 
 describe("GET /health", () => {
   it("responde com status ok", async () => {
-    const app = buildApp(makeConfig(), { ledger: makeLedger(), youtube: makeYouTubeClient() });
+    const app = buildApp(makeConfig(), { ledger: makeLedger(), youtube: makeYouTubeClient(), search: makeSearchClient() });
 
     const res = await app.inject({ method: "GET", url: "/health" });
 
@@ -14,7 +14,7 @@ describe("GET /health", () => {
   });
 
   it("rota desconhecida responde 404 quando sem frontend estático", async () => {
-    const app = buildApp(makeConfig(), { ledger: makeLedger(), youtube: makeYouTubeClient() });
+    const app = buildApp(makeConfig(), { ledger: makeLedger(), youtube: makeYouTubeClient(), search: makeSearchClient() });
 
     const res = await app.inject({ method: "GET", url: "/nao-existe" });
 
@@ -26,7 +26,7 @@ describe("POST /channels", () => {
   it("resolve o handle, cria o Canal no SQLite e enfileira um job", async () => {
     const ledger = makeLedger();
     const youtube = makeYouTubeClient({ channelId: "UCY8iijN1AkyDCh1Z9akcqUA", title: "Funky Black Cat" });
-    const app = buildApp(makeConfig(), { ledger, youtube });
+    const app = buildApp(makeConfig(), { ledger, youtube, search: makeSearchClient() });
 
     const res = await app.inject({
       method: "POST",
@@ -50,7 +50,7 @@ describe("POST /channels", () => {
   it("responde 201 criando o Canal mesmo quando o handle já foi resolvido antes", async () => {
     const ledger = makeLedger();
     const youtube = makeYouTubeClient();
-    const app = buildApp(makeConfig(), { ledger, youtube });
+    const app = buildApp(makeConfig(), { ledger, youtube, search: makeSearchClient() });
 
     const first = await app.inject({
       method: "POST",
@@ -84,7 +84,7 @@ describe("POST /channels", () => {
         throw new Error("não usado neste teste");
       },
     };
-    const app = buildApp(makeConfig(), { ledger: makeLedger(), youtube });
+    const app = buildApp(makeConfig(), { ledger: makeLedger(), youtube, search: makeSearchClient() });
 
     const res = await app.inject({
       method: "POST",
@@ -99,7 +99,7 @@ describe("POST /channels", () => {
 describe("GET /channels/:id", () => {
   it("devolve o Canal com status e progresso por Fase", async () => {
     const ledger = makeLedger();
-    const app = buildApp(makeConfig(), { ledger, youtube: makeYouTubeClient() });
+    const app = buildApp(makeConfig(), { ledger, youtube: makeYouTubeClient(), search: makeSearchClient() });
     ledger.createChannel({
       channelId: "UCY8iijN1AkyDCh1Z9akcqUA",
       handle: "@funkyblackcat",
@@ -121,7 +121,7 @@ describe("GET /channels/:id", () => {
   });
 
   it("devolve 404 para um channelId desconhecido", async () => {
-    const app = buildApp(makeConfig(), { ledger: makeLedger(), youtube: makeYouTubeClient() });
+    const app = buildApp(makeConfig(), { ledger: makeLedger(), youtube: makeYouTubeClient(), search: makeSearchClient() });
 
     const res = await app.inject({ method: "GET", url: "/channels/desconhecido" });
 

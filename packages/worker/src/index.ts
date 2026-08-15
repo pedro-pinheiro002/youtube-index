@@ -4,9 +4,9 @@ import { pollOnce } from "./worker.js";
 import {
   createDatabase,
   createIngestion,
+  MeilisearchProjection,
   SqliteLedger,
   YouTubeDataApiClient,
-  type Projection,
   type TranscriptFetcher,
 } from "@youtube-index/domain";
 
@@ -18,7 +18,7 @@ async function main(): Promise<void> {
   const youtube = new YouTubeDataApiClient(config.youtubeApiKey);
 
   const transcripts: TranscriptFetcher = { fetchTranscript: async () => null };
-  const projection: Projection = { addDocuments: async () => {} };
+  const projection = new MeilisearchProjection({ url: config.meiliUrl, masterKey: config.meiliMasterKey });
   const ingestion = createIngestion({ youtube, transcripts, ledger, projection });
 
   const healthServer = createHealthServer();

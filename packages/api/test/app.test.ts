@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { buildApp } from "../src/app.js";
-import { makeConfig, makeLedger, makeYouTubeClient } from "./helpers.js";
+import { makeConfig, makeLedger, makeSearchClient, makeYouTubeClient } from "./helpers.js";
 
 describe("GET /health", () => {
   it("responde com status ok", async () => {
-    const app = buildApp(makeConfig(), { ledger: makeLedger(), youtube: makeYouTubeClient() });
+    const app = buildApp(makeConfig(), { ledger: makeLedger(), youtube: makeYouTubeClient(), search: makeSearchClient() });
 
     const res = await app.inject({ method: "GET", url: "/health" });
 
@@ -13,7 +13,7 @@ describe("GET /health", () => {
   });
 
   it("rota desconhecida responde 404 quando sem frontend estático", async () => {
-    const app = buildApp(makeConfig(), { ledger: makeLedger(), youtube: makeYouTubeClient() });
+    const app = buildApp(makeConfig(), { ledger: makeLedger(), youtube: makeYouTubeClient(), search: makeSearchClient() });
 
     const res = await app.inject({ method: "GET", url: "/nao-existe" });
 

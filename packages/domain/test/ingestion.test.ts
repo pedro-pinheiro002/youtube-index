@@ -6,6 +6,7 @@ import type {
   Ledger,
   Projection,
   TranscriptFetcher,
+  VideoSearchDocument,
   YouTubeClient,
   YouTubeVideo,
   YouTubeVideoStats,
@@ -29,6 +30,16 @@ function makeTranscriptFetcher(): TranscriptFetcher {
 
 function makeProjection(): Projection {
   return { addDocuments: async () => {} };
+}
+
+function makeRecordingProjection() {
+  const calls: Array<{ channelId: string; documents: VideoSearchDocument[] }> = [];
+  return {
+    addDocuments: async (channelId: string, documents: VideoSearchDocument[]) => {
+      calls.push({ channelId, documents });
+    },
+    calls,
+  };
 }
 
 function makeYouTubeClient(pages: FakePage[], stats: Record<string, YouTubeVideoStats>): YouTubeClient {
@@ -184,6 +195,44 @@ describe("createIngestion", () => {
         done: 2,
         total: 2,
       });
+    });
+
+    it("grava Documentos de Vídeo na Projeção com contexto denormalizado (URL e thumbnail)", async () => {
+      const ledger = makeLedger();
+      ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
+      const projection = makeRecordingProjection();
+      const ingestion = createIngestion({
+        youtube: makeYouTubeClient(
+          [{ videos: [video("v1", "Primeiro vídeo", "2023-01-01T00:00:00Z")], nextPageToken: null }],
+          { v1: { views: 1234, likes: 56, durationSeconds: 542 } },
+        ),
+        transcripts: makeTranscriptFetcher(),
+        ledger,
+        projection,
+      });
+
+      await ingestion.runVideosPhase(CHANNEL_ID);
+
+      expect(projection.calls).toEqual([
+        {
+          channelId: CHANNEL_ID,
+          documents: [
+            expect.objectContaining({
+              id: "v1",
+              channelId: CHANNEL_ID,
+              type: "video",
+              title: "Primeiro vídeo",
+              description: "descrição de v1",
+              views: 1234,
+              likes: 56,
+              durationSeconds: 542,
+              url: "https://www.youtube.com/watch?v=v1",
+              thumbnail: "https://i.ytimg.com/vi/v1/hqdefault.jpg",
+              publishedAt: "2023-01-01T00:00:00Z",
+            }),
+          ],
+        },
+      ]);
     });
   });
 

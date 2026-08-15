@@ -1,5 +1,6 @@
 import type { Ledger, VideoRecord } from "./ledger.js";
 import type { Projection } from "./projection.js";
+import { toVideoDocument } from "./projection.js";
 import type { TranscriptFetcher } from "./transcripts.js";
 import type { YouTubeClient } from "./youtube.js";
 
@@ -22,6 +23,7 @@ export function createIngestion(deps: IngestionDeps): Ingestion {
 
     let pageToken: string | null = null;
     let done = 0;
+    const records: VideoRecord[] = [];
     do {
       const page = await deps.youtube.listUploads(uploadsPlaylistId, pageToken);
       for (const video of page.videos) {
@@ -38,6 +40,7 @@ export function createIngestion(deps: IngestionDeps): Ingestion {
             durationSeconds: stats.durationSeconds,
           };
           deps.ledger.upsertVideo(record);
+          records.push(record);
         }
         done += 1;
         deps.ledger.updatePhase(channelId, "videos", { done });
@@ -45,6 +48,7 @@ export function createIngestion(deps: IngestionDeps): Ingestion {
       pageToken = page.nextPageToken;
     } while (pageToken);
 
+    await deps.projection.addDocuments(channelId, records.map(toVideoDocument));
     deps.ledger.updatePhase(channelId, "videos", { status: "completed", total: done });
   }
 
