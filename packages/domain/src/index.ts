@@ -9,7 +9,14 @@ export type {
   PhaseStatus,
 } from "./types.js";
 export { PHASES } from "./types.js";
-export type { CreateChannelInput, CommentRecord, Ledger, TranscriptSegmentRecord, VideoRecord } from "./ledger.js";
+export type {
+  CommentAbsenceReason,
+  CreateChannelInput,
+  CommentRecord,
+  Ledger,
+  TranscriptSegmentRecord,
+  VideoRecord,
+} from "./ledger.js";
 export { SqliteLedger } from "./ledger.js";
 export { applySchema, createDatabase, openDatabase, SCHEMA } from "./schema.js";
 export type { Ingestion, IngestionDeps } from "./ingestion.js";
@@ -48,6 +55,7 @@ export type {
   YouTubeComment,
   YouTubeVideo,
   YouTubeVideoStats,
+  RetryConfig,
 } from "./youtube.js";
 export {
   ChannelNotFoundError,

@@ -59,7 +59,9 @@ describe("YouTubeDataApiClient", () => {
 
     it("lança YouTubeApiError em falha de API (ex.: 403 de cota)", async () => {
       const fetchImpl = async () => new Response("{}", { status: 403 });
-      const client = new YouTubeDataApiClient("test-key", fetchImpl);
+      const client = new YouTubeDataApiClient("test-key", fetchImpl, {
+        sleep: async () => {},
+      });
 
       await expect(client.resolveHandle("@funkyblackcat")).rejects.toBeInstanceOf(YouTubeApiError);
     });
@@ -281,9 +283,152 @@ describe("YouTubeDataApiClient", () => {
 
     it("lança YouTubeApiError em falha de API fora de Comentários desativados", async () => {
       const fetchImpl = async () => new Response("{}", { status: 403 });
-      const client = new YouTubeDataApiClient("test-key", fetchImpl);
+      const client = new YouTubeDataApiClient("test-key", fetchImpl, {
+        sleep: async () => {},
+      });
 
       await expect(client.listComments("v1")).rejects.toBeInstanceOf(YouTubeApiError);
+    });
+  });
+
+  describe("retry com exponential backoff", () => {
+    const PLAYLIST_ID = "UULF-xyz";
+
+    function retryClient(
+      fetchImpl: (url: string | URL | Request) => Promise<Response>,
+      delays: number[],
+      maxRetries = 2,
+    ) {
+      return new YouTubeDataApiClient("test-key", fetchImpl, {
+        maxRetries,
+        baseDelayMs: 100,
+        maxDelayMs: 100000,
+        sleep: async (ms) => {
+          delays.push(ms);
+        },
+      });
+    }
+
+    it("repete em 429 com delays crescentes até obter sucesso", async () => {
+      const delays: number[] = [];
+      let calls = 0;
+      const client = retryClient(
+        async () => {
+          calls += 1;
+          if (calls < 3) {
+            return new Response("{}", { status: 429 });
+          }
+          return okResponse({ items: [] });
+        },
+        delays,
+      );
+
+      const page = await client.listUploads(PLAYLIST_ID);
+
+      expect(page).toEqual({ videos: [], nextPageToken: null });
+      expect(calls).toBe(3);
+      expect(delays).toEqual([100, 200]);
+    });
+
+    it("repete em 403 de cota com backoff", async () => {
+      const delays: number[] = [];
+      let calls = 0;
+      const client = retryClient(
+        async () => {
+          calls += 1;
+          if (calls < 3) {
+            return new Response("{}", { status: 403 });
+          }
+          return okResponse({ items: [] });
+        },
+        delays,
+      );
+
+      await client.listUploads(PLAYLIST_ID);
+
+      expect(calls).toBe(3);
+      expect(delays).toEqual([100, 200]);
+    });
+
+    it("não repete em 403 de Comentários desativados", async () => {
+      const delays: number[] = [];
+      let calls = 0;
+      const client = retryClient(
+        async () => {
+          calls += 1;
+          return new Response(
+            JSON.stringify({
+              error: { errors: [{ reason: "commentsDisabled" }] },
+            }),
+            { status: 403, headers: { "content-type": "application/json" } },
+          );
+        },
+        delays,
+      );
+
+      await expect(client.listComments("v1")).rejects.toBeInstanceOf(CommentsDisabledError);
+      expect(calls).toBe(1);
+      expect(delays).toEqual([]);
+    });
+
+    it("esgota as retentativas e lança YouTubeApiError em 429 persistente", async () => {
+      const delays: number[] = [];
+      const client = retryClient(
+        async () => new Response("{}", { status: 429 }),
+        delays,
+        2,
+      );
+
+      await expect(client.listUploads(PLAYLIST_ID)).rejects.toBeInstanceOf(YouTubeApiError);
+      expect(delays).toEqual([100, 200]);
+    });
+
+    it("respeita o header Retry-After em respostas 429", async () => {
+      const delays: number[] = [];
+      let calls = 0;
+      const client = retryClient(
+        async () => {
+          calls += 1;
+          if (calls === 1) {
+            return new Response("{}", { status: 429, headers: { "retry-after": "5" } });
+          }
+          return okResponse({ items: [] });
+        },
+        delays,
+      );
+
+      await client.listUploads(PLAYLIST_ID);
+
+      expect(calls).toBe(2);
+      expect(delays).toEqual([5000]);
+    });
+
+    it("não limita o header Retry-After pelo maxDelayMs", async () => {
+      const delays: number[] = [];
+      let calls = 0;
+      const client = new YouTubeDataApiClient(
+        "test-key",
+        async () => {
+          calls += 1;
+          if (calls === 1) {
+            return new Response("{}", { status: 429, headers: { "retry-after": "120" } });
+          }
+          return okResponse({ items: [] });
+        },
+        {
+          maxRetries: 2,
+          baseDelayMs: 100,
+          maxDelayMs: 30000,
+          sleep: async (ms) => {
+            delays.push(ms);
+          },
+        },
+      );
+
+      await client.listUploads(PLAYLIST_ID);
+
+      expect(calls).toBe(2);
+      expect(delays).toEqual([120000]);
     });
   });
 

@@ -58,6 +58,12 @@ CREATE TABLE IF NOT EXISTS transcript_absences (
   created_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS comment_absences (
+  video_id TEXT PRIMARY KEY REFERENCES videos(id) ON DELETE CASCADE,
+  reason TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS ingestion_jobs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   channel_id TEXT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,

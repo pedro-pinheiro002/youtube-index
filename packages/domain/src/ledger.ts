@@ -41,16 +41,25 @@ export interface TranscriptSegmentRecord {
   text: string;
 }
 
+export type CommentAbsenceReason = "disabled" | "none";
+
 export interface Ledger {
   createChannel(input: CreateChannelInput): ChannelWithPhases;
   getChannel(channelId: string): ChannelWithPhases | null;
   setChannelStatus(channelId: string, status: ChannelStatus): void;
   updatePhase(channelId: string, phase: PhaseKey, update: Partial<Pick<PhaseProgress, "status" | "done" | "total">>): void;
   upsertVideo(video: VideoRecord): void;
+  hasVideo(videoId: string): boolean;
   listVideos(channelId: string): VideoRecord[];
   upsertComment(comment: CommentRecord): void;
+  deleteCommentsForVideo(videoId: string): void;
+  hasCommentIngestion(videoId: string): boolean;
+  markCommentAbsence(videoId: string, reason: CommentAbsenceReason): void;
+  clearCommentAbsence(videoId: string): void;
+  listCommentAbsences(channelId: string): string[];
   listComments(channelId: string): CommentRecord[];
   upsertTranscriptSegment(segment: TranscriptSegmentRecord): void;
+  hasTranscriptIngestion(videoId: string): boolean;
   listTranscriptSegments(channelId: string): TranscriptSegmentRecord[];
   markTranscriptAbsent(videoId: string): void;
   listTranscriptAbsences(channelId: string): string[];
@@ -81,6 +90,11 @@ export class SqliteLedger implements Ledger {
 
   constructor(db: DatabaseSync) {
     this.db = db;
+  }
+
+  private hasRow(table: string, videoId: string): boolean {
+    const row = this.db.prepare(`SELECT 1 FROM ${table} WHERE video_id = ? LIMIT 1`).get(videoId);
+    return row !== undefined;
   }
 
   createChannel(input: CreateChannelInput): ChannelWithPhases {
@@ -188,6 +202,11 @@ export class SqliteLedger implements Ledger {
       );
   }
 
+  hasVideo(videoId: string): boolean {
+    const row = this.db.prepare("SELECT 1 FROM videos WHERE id = ? LIMIT 1").get(videoId);
+    return row !== undefined;
+  }
+
   listVideos(channelId: string): VideoRecord[] {
     const rows = this.db
       .prepare(
@@ -226,6 +245,38 @@ export class SqliteLedger implements Ledger {
       .run(comment.id, comment.videoId, comment.author, comment.text, comment.likes, comment.publishedAt, now);
   }
 
+  deleteCommentsForVideo(videoId: string): void {
+    this.db.prepare("DELETE FROM comments WHERE video_id = ?").run(videoId);
+  }
+
+  hasCommentIngestion(videoId: string): boolean {
+    return this.hasRow("comments", videoId) || this.hasRow("comment_absences", videoId);
+  }
+
+  markCommentAbsence(videoId: string, reason: CommentAbsenceReason): void {
+    const now = new Date().toISOString();
+    this.db
+      .prepare(
+        "INSERT INTO comment_absences (video_id, reason, created_at) VALUES (?, ?, ?) " +
+          "ON CONFLICT(video_id) DO UPDATE SET reason = excluded.reason",
+      )
+      .run(videoId, reason, now);
+  }
+
+  clearCommentAbsence(videoId: string): void {
+    this.db.prepare("DELETE FROM comment_absences WHERE video_id = ?").run(videoId);
+  }
+
+  listCommentAbsences(channelId: string): string[] {
+    const rows = this.db
+      .prepare(
+        "SELECT a.video_id FROM comment_absences a JOIN videos v ON v.id = a.video_id " +
+          "WHERE v.channel_id = ? ORDER BY a.video_id",
+      )
+      .all(channelId) as unknown as Array<{ video_id: string }>;
+    return rows.map((row) => row.video_id);
+  }
+
   listComments(channelId: string): CommentRecord[] {
     const rows = this.db
       .prepare(
@@ -262,6 +313,10 @@ export class SqliteLedger implements Ledger {
           "VALUES (?, ?, ?, ?) ON CONFLICT(video_id, start_seconds) DO NOTHING",
       )
       .run(segment.videoId, segment.start, segment.end, segment.text);
+  }
+
+  hasTranscriptIngestion(videoId: string): boolean {
+    return this.hasRow("transcript_segments", videoId) || this.hasRow("transcript_absences", videoId);
   }
 
   listTranscriptSegments(channelId: string): TranscriptSegmentRecord[] {

@@ -380,4 +380,242 @@ describe("SqliteLedger", () => {
       expect(ledger.listTranscriptAbsences(CHANNEL_ID)).toEqual([]);
     });
   });
+
+  describe("hasVideo", () => {
+    function makeChannelWithVideo(ledger: SqliteLedger) {
+      ledger.createChannel({
+        channelId: CHANNEL_ID,
+        handle: "@funkyblackcat",
+        title: "Funky Black Cat",
+      });
+      ledger.upsertVideo({
+        id: "v1",
+        channelId: CHANNEL_ID,
+        title: "Primeiro vídeo",
+        description: "Uma descrição",
+        publishedAt: "2023-01-01T00:00:00Z",
+        views: 100,
+        likes: 10,
+        durationSeconds: 120,
+      });
+    }
+
+    it("devolve true para um Vídeo já gravado e false para um desconhecido", () => {
+      const ledger = makeLedger();
+      makeChannelWithVideo(ledger);
+
+      expect(ledger.hasVideo("v1")).toBe(true);
+      expect(ledger.hasVideo("v2")).toBe(false);
+    });
+  });
+
+  describe("comment_absences", () => {
+    function makeChannelWithVideos(ledger: SqliteLedger) {
+      ledger.createChannel({
+        channelId: CHANNEL_ID,
+        handle: "@funkyblackcat",
+        title: "Funky Black Cat",
+      });
+      for (const id of ["v1", "v2"]) {
+        ledger.upsertVideo({
+          id,
+          channelId: CHANNEL_ID,
+          title: `Vídeo ${id}`,
+          description: "Uma descrição",
+          publishedAt: "2023-01-01T00:00:00Z",
+          views: 100,
+          likes: 10,
+          durationSeconds: 120,
+        });
+      }
+    }
+
+    it("marca um Vídeo sem Comentários (desativados/vazio) e o lista como ausência", () => {
+      const ledger = makeLedger();
+      makeChannelWithVideos(ledger);
+
+      ledger.markCommentAbsence("v1", "disabled");
+      ledger.markCommentAbsence("v2", "none");
+
+      expect(ledger.listCommentAbsences(CHANNEL_ID)).toEqual(["v1", "v2"]);
+    });
+
+    it("é idempotente ao marcar a mesma ausência de novo", () => {
+      const ledger = makeLedger();
+      makeChannelWithVideos(ledger);
+
+      ledger.markCommentAbsence("v1", "disabled");
+      ledger.markCommentAbsence("v1", "disabled");
+
+      expect(ledger.listCommentAbsences(CHANNEL_ID)).toEqual(["v1"]);
+    });
+
+    it("clearCommentAbsence remove a marcação", () => {
+      const ledger = makeLedger();
+      makeChannelWithVideos(ledger);
+      ledger.markCommentAbsence("v1", "none");
+
+      ledger.clearCommentAbsence("v1");
+
+      expect(ledger.listCommentAbsences(CHANNEL_ID)).toEqual([]);
+    });
+
+    it("devolve lista vazia quando nenhum Vídeo está com Comentários ausentes", () => {
+      const ledger = makeLedger();
+      makeChannelWithVideos(ledger);
+
+      expect(ledger.listCommentAbsences(CHANNEL_ID)).toEqual([]);
+    });
+  });
+
+  describe("hasCommentIngestion", () => {
+    function makeChannelWithVideo(ledger: SqliteLedger) {
+      ledger.createChannel({
+        channelId: CHANNEL_ID,
+        handle: "@funkyblackcat",
+        title: "Funky Black Cat",
+      });
+      ledger.upsertVideo({
+        id: "v1",
+        channelId: CHANNEL_ID,
+        title: "Primeiro vídeo",
+        description: "Uma descrição",
+        publishedAt: "2023-01-01T00:00:00Z",
+        views: 100,
+        likes: 10,
+        durationSeconds: 120,
+      });
+    }
+
+    it("devolve true quando o Vídeo tem Comentários gravados", () => {
+      const ledger = makeLedger();
+      makeChannelWithVideo(ledger);
+      ledger.upsertComment({
+        id: "c1",
+        videoId: "v1",
+        channelId: CHANNEL_ID,
+        videoTitle: "Primeiro vídeo",
+        author: "Gato Funky",
+        text: "Primeiro comentário",
+        likes: 42,
+        publishedAt: "2023-01-02T00:00:00Z",
+      });
+
+      expect(ledger.hasCommentIngestion("v1")).toBe(true);
+    });
+
+    it("devolve true quando o Vídeo tem ausência de Comentários marcada", () => {
+      const ledger = makeLedger();
+      makeChannelWithVideo(ledger);
+      ledger.markCommentAbsence("v1", "disabled");
+
+      expect(ledger.hasCommentIngestion("v1")).toBe(true);
+    });
+
+    it("devolve false quando nada foi ingerido para o Vídeo", () => {
+      const ledger = makeLedger();
+      makeChannelWithVideo(ledger);
+
+      expect(ledger.hasCommentIngestion("v1")).toBe(false);
+    });
+  });
+
+  describe("deleteCommentsForVideo", () => {
+    it("remove apenas os Comentários do Vídeo indicado", () => {
+      const ledger = makeLedger();
+      ledger.createChannel({
+        channelId: CHANNEL_ID,
+        handle: "@funkyblackcat",
+        title: "Funky Black Cat",
+      });
+      for (const id of ["v1", "v2"]) {
+        ledger.upsertVideo({
+          id,
+          channelId: CHANNEL_ID,
+          title: `Vídeo ${id}`,
+          description: "Uma descrição",
+          publishedAt: "2023-01-01T00:00:00Z",
+          views: 100,
+          likes: 10,
+          durationSeconds: 120,
+        });
+      }
+      ledger.upsertComment({
+        id: "c1",
+        videoId: "v1",
+        channelId: CHANNEL_ID,
+        videoTitle: "Vídeo v1",
+        author: "A",
+        text: "Comentário de v1",
+        likes: 1,
+        publishedAt: "2023-01-02T00:00:00Z",
+      });
+      ledger.upsertComment({
+        id: "c2",
+        videoId: "v2",
+        channelId: CHANNEL_ID,
+        videoTitle: "Vídeo v2",
+        author: "B",
+        text: "Comentário de v2",
+        likes: 2,
+        publishedAt: "2023-01-03T00:00:00Z",
+      });
+
+      ledger.deleteCommentsForVideo("v1");
+
+      expect(ledger.listComments(CHANNEL_ID).map((c) => c.id)).toEqual(["c2"]);
+    });
+  });
+
+  describe("hasTranscriptIngestion", () => {
+    function makeChannelWithVideo(ledger: SqliteLedger) {
+      ledger.createChannel({
+        channelId: CHANNEL_ID,
+        handle: "@funkyblackcat",
+        title: "Funky Black Cat",
+      });
+      ledger.upsertVideo({
+        id: "v1",
+        channelId: CHANNEL_ID,
+        title: "Primeiro vídeo",
+        description: "Uma descrição",
+        publishedAt: "2023-01-01T00:00:00Z",
+        views: 100,
+        likes: 10,
+        durationSeconds: 120,
+      });
+    }
+
+    it("devolve true quando o Vídeo tem Segmentos de Transcrição gravados", () => {
+      const ledger = makeLedger();
+      makeChannelWithVideo(ledger);
+      ledger.upsertTranscriptSegment({
+        id: "v1:0",
+        videoId: "v1",
+        channelId: CHANNEL_ID,
+        videoTitle: "Primeiro vídeo",
+        videoPublishedAt: "2023-01-01T00:00:00Z",
+        start: 0,
+        end: 10,
+        text: "trecho",
+      });
+
+      expect(ledger.hasTranscriptIngestion("v1")).toBe(true);
+    });
+
+    it("devolve true quando o Vídeo tem ausência de Transcrição marcada", () => {
+      const ledger = makeLedger();
+      makeChannelWithVideo(ledger);
+      ledger.markTranscriptAbsent("v1");
+
+      expect(ledger.hasTranscriptIngestion("v1")).toBe(true);
+    });
+
+    it("devolve false quando nada foi ingerido para o Vídeo", () => {
+      const ledger = makeLedger();
+      makeChannelWithVideo(ledger);
+
+      expect(ledger.hasTranscriptIngestion("v1")).toBe(false);
+    });
+  });
 });

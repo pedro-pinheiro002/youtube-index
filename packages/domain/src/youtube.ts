@@ -122,13 +122,71 @@ interface ApiErrorBody {
   };
 }
 
+export interface RetryConfig {
+  maxRetries?: number;
+  baseDelayMs?: number;
+  maxDelayMs?: number;
+  sleep?: (ms: number) => Promise<void>;
+}
+
+interface ResolvedRetryConfig {
+  maxRetries: number;
+  baseDelayMs: number;
+  maxDelayMs: number;
+  sleep: (ms: number) => Promise<void>;
+}
+
+const DEFAULT_RETRY: ResolvedRetryConfig = {
+  maxRetries: 3,
+  baseDelayMs: 1000,
+  maxDelayMs: 30000,
+  sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+};
+
 export class YouTubeDataApiClient implements YouTubeClient {
   private readonly apiKey: string;
   private readonly fetchImpl: typeof fetch;
+  private readonly retry: ResolvedRetryConfig;
 
-  constructor(apiKey: string, fetchImpl: typeof fetch = fetch) {
+  constructor(apiKey: string, fetchImpl: typeof fetch = fetch, retry: RetryConfig = {}) {
     this.apiKey = apiKey;
     this.fetchImpl = fetchImpl;
+    this.retry = { ...DEFAULT_RETRY, ...retry };
+  }
+
+  private async isRetriable(res: Response): Promise<boolean> {
+    if (res.status === 429) {
+      return true;
+    }
+    if (res.status !== 403) {
+      return false;
+    }
+    const clone = res.clone();
+    const data = (await clone.json().catch(() => null)) as ApiErrorBody | null;
+    const disabled = data?.error?.errors?.some((error) => error.reason === "commentsDisabled");
+    return !disabled;
+  }
+
+  private retryDelayMs(res: Response, attempt: number): number {
+    const retryAfter = Number(res.headers.get("retry-after"));
+    if (retryAfter) {
+      return retryAfter * 1000;
+    }
+    const exponential = this.retry.baseDelayMs * 2 ** attempt;
+    return Math.min(exponential, this.retry.maxDelayMs);
+  }
+
+  private async fetchWithRetry(url: URL): Promise<Response> {
+    let attempt = 0;
+    for (;;) {
+      const res = await this.fetchImpl(url);
+      if (attempt >= this.retry.maxRetries || !(await this.isRetriable(res))) {
+        return res;
+      }
+      const delay = this.retryDelayMs(res, attempt);
+      attempt += 1;
+      await this.retry.sleep(delay);
+    }
   }
 
   async resolveHandle(handle: string): Promise<ChannelResolution> {
@@ -138,7 +196,7 @@ export class YouTubeDataApiClient implements YouTubeClient {
     url.searchParams.set("forHandle", normalized);
     url.searchParams.set("key", this.apiKey);
 
-    const res = await this.fetchImpl(url);
+    const res = await this.fetchWithRetry(url);
     if (res.status === 404) {
       throw new ChannelNotFoundError(handle);
     }
@@ -159,7 +217,7 @@ export class YouTubeDataApiClient implements YouTubeClient {
     url.searchParams.set("id", channelId);
     url.searchParams.set("key", this.apiKey);
 
-    const res = await this.fetchImpl(url);
+    const res = await this.fetchWithRetry(url);
     if (!res.ok) {
       throw new YouTubeApiError(`YouTube API respondeu ${res.status} para channelId '${channelId}'`, res.status);
     }
@@ -181,7 +239,7 @@ export class YouTubeDataApiClient implements YouTubeClient {
     }
     url.searchParams.set("key", this.apiKey);
 
-    const res = await this.fetchImpl(url);
+    const res = await this.fetchWithRetry(url);
     if (!res.ok) {
       throw new YouTubeApiError(`YouTube API respondeu ${res.status} ao listar uploads`, res.status);
     }
@@ -203,7 +261,7 @@ export class YouTubeDataApiClient implements YouTubeClient {
     url.searchParams.set("id", videoId);
     url.searchParams.set("key", this.apiKey);
 
-    const res = await this.fetchImpl(url);
+    const res = await this.fetchWithRetry(url);
     if (!res.ok) {
       throw new YouTubeApiError(`YouTube API respondeu ${res.status} ao buscar estatísticas de '${videoId}'`, res.status);
     }
@@ -227,7 +285,7 @@ export class YouTubeDataApiClient implements YouTubeClient {
     url.searchParams.set("order", "relevance");
     url.searchParams.set("key", this.apiKey);
 
-    const res = await this.fetchImpl(url);
+    const res = await this.fetchWithRetry(url);
     if (!res.ok) {
       if (res.status === 403) {
         const data = (await res.json().catch(() => null)) as ApiErrorBody | null;
