@@ -301,7 +301,7 @@ describe("createIngestion", () => {
       return { ledger, ingestion };
     }
 
-    it("busca Comentários por Vídeo e os grava no Ledger com contexto do Vídeo", async () => {
+    it("busca Comentários por Vídeo e os grava no Ledger como linhas canônicas", async () => {
       const { ledger, ingestion } = makeChannelWithVideos();
       await ingestion.runVideosPhase(CHANNEL_ID);
       const youtube = makeYouTubeClient([], {}, {
@@ -320,7 +320,6 @@ describe("createIngestion", () => {
             id: "c1",
             videoId: "v1",
             channelId: CHANNEL_ID,
-            videoTitle: "Primeiro vídeo",
             author: "Gato Funky",
             text: "Primeiro comentário",
             likes: 42,
@@ -328,7 +327,6 @@ describe("createIngestion", () => {
           expect.objectContaining({
             id: "c2",
             videoId: "v2",
-            videoTitle: "Segundo vídeo",
             author: "Cão Legal",
           }),
         ]),
@@ -466,7 +464,6 @@ describe("createIngestion", () => {
           id: "v1:0",
           videoId: "v1",
           channelId: CHANNEL_ID,
-          videoTitle: "Primeiro vídeo",
           start: 0,
           end: 10,
           text: "primeiro trecho",
@@ -475,7 +472,6 @@ describe("createIngestion", () => {
           id: "v1:142",
           videoId: "v1",
           channelId: CHANNEL_ID,
-          videoTitle: "Primeiro vídeo",
           start: 142,
           end: 150,
           text: "trecho com deep-link",
@@ -802,9 +798,6 @@ describe("createIngestion", () => {
           id: "c1",
           videoId: "v1",
           channelId: CHANNEL_ID,
-          videoTitle: "Vídeo v1",
-          videoViews: 1,
-          videoLikes: 0,
           author: "Gato Funky",
           text: "Comentário de v1",
           likes: 1,
@@ -864,9 +857,6 @@ describe("createIngestion", () => {
           id: "c1",
           videoId: "v1",
           channelId: CHANNEL_ID,
-          videoTitle: "Recente",
-          videoViews: 1,
-          videoLikes: 0,
           author: "Antigo Autor",
           text: "Comentário antigo de v1",
           likes: 1,
@@ -876,9 +866,6 @@ describe("createIngestion", () => {
           id: "c2",
           videoId: "v2",
           channelId: CHANNEL_ID,
-          videoTitle: "Antigo",
-          videoViews: 2,
-          videoLikes: 0,
           author: "Autor",
           text: "Comentário de v2",
           likes: 2,
@@ -1005,10 +992,6 @@ describe("createIngestion", () => {
           id: "v1:0",
           videoId: "v1",
           channelId: CHANNEL_ID,
-          videoTitle: "Vídeo v1",
-          videoViews: 1,
-          videoLikes: 0,
-          videoPublishedAt: daysAgo(10),
           start: 0,
           end: 10,
           text: "trecho de v1",

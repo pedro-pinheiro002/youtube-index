@@ -50,18 +50,24 @@ describe("toVideoDocument", () => {
 
 describe("toCommentDocument", () => {
   it("monta o Documento de Comentário com contexto do Vídeo e deep-link ao Comentário", () => {
-    const doc = toCommentDocument({
-      id: "c1",
-      videoId: "v1",
-      channelId: CHANNEL_ID,
-      videoTitle: "Primeiro vídeo",
-      videoViews: 1234,
-      videoLikes: 56,
-      author: "Gato Funky",
-      text: "Primeiro comentário",
-      likes: 42,
-      publishedAt: "2023-01-02T00:00:00Z",
-    });
+    const doc = toCommentDocument(
+      {
+        id: "c1",
+        videoId: "v1",
+        channelId: CHANNEL_ID,
+        author: "Gato Funky",
+        text: "Primeiro comentário",
+        likes: 42,
+        publishedAt: "2023-01-02T00:00:00Z",
+      },
+      {
+        id: "v1",
+        title: "Primeiro vídeo",
+        views: 1234,
+        likes: 56,
+        publishedAt: "2023-01-01T00:00:00Z",
+      },
+    );
 
     expect(doc).toEqual({
       id: "c1",
@@ -88,18 +94,23 @@ describe("toCommentDocument", () => {
 
 describe("toSegmentDocument", () => {
   it("monta o Documento de Segmento com contexto do Vídeo e deep-link ao momento exato", () => {
-    const doc = toSegmentDocument({
-      id: "v1:142",
-      videoId: "v1",
-      channelId: CHANNEL_ID,
-      videoTitle: "Primeiro vídeo",
-      videoViews: 1234,
-      videoLikes: 56,
-      videoPublishedAt: "2023-01-01T00:00:00Z",
-      start: 142,
-      end: 150,
-      text: "trecho da transcrição",
-    });
+    const doc = toSegmentDocument(
+      {
+        id: "v1:142",
+        videoId: "v1",
+        channelId: CHANNEL_ID,
+        start: 142,
+        end: 150,
+        text: "trecho da transcrição",
+      },
+      {
+        id: "v1",
+        title: "Primeiro vídeo",
+        views: 1234,
+        likes: 56,
+        publishedAt: "2023-01-01T00:00:00Z",
+      },
+    );
 
     expect(doc).toEqual({
       id: "v1:142",

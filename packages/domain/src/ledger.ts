@@ -19,13 +19,19 @@ export interface VideoRecord {
   durationSeconds: number;
 }
 
+/** O contexto canônico de um Vídeo usado para compor Documentos de Comentário e Segmento. */
+export interface VideoContext {
+  id: string;
+  title: string;
+  views: number;
+  likes: number;
+  publishedAt: string;
+}
+
 export interface CommentRecord {
   id: string;
   videoId: string;
   channelId: string;
-  videoTitle: string;
-  videoViews: number;
-  videoLikes: number;
   author: string;
   text: string;
   likes: number;
@@ -36,10 +42,6 @@ export interface TranscriptSegmentRecord {
   id: string;
   videoId: string;
   channelId: string;
-  videoTitle: string;
-  videoViews: number;
-  videoLikes: number;
-  videoPublishedAt: string;
   start: number;
   end: number;
   text: string;
@@ -56,6 +58,7 @@ export interface Ledger {
   updatePhase(channelId: string, phase: PhaseKey, update: Partial<Pick<PhaseProgress, "status" | "done" | "total">>): void;
   upsertVideo(video: VideoRecord): void;
   hasVideo(videoId: string): boolean;
+  videoContext(videoId: string): VideoContext | null;
   listVideos(channelId: string): VideoRecord[];
   upsertComment(comment: CommentRecord): void;
   deleteCommentsForVideo(videoId: string): void;
@@ -218,6 +221,24 @@ export class SqliteLedger implements Ledger {
     return row !== undefined;
   }
 
+  videoContext(videoId: string): VideoContext | null {
+    const row = this.db
+      .prepare("SELECT id, title, views, likes, published_at FROM videos WHERE id = ?")
+      .get(videoId) as unknown as
+      | { id: string; title: string; views: number; likes: number; published_at: string }
+      | undefined;
+    if (!row) {
+      return null;
+    }
+    return {
+      id: row.id,
+      title: row.title,
+      views: row.views,
+      likes: row.likes,
+      publishedAt: row.published_at,
+    };
+  }
+
   listVideos(channelId: string): VideoRecord[] {
     const rows = this.db
       .prepare(
@@ -291,8 +312,7 @@ export class SqliteLedger implements Ledger {
   listComments(channelId: string): CommentRecord[] {
     const rows = this.db
       .prepare(
-        "SELECT c.id, c.video_id, v.channel_id, v.title AS video_title, v.views AS video_views, " +
-          "v.likes AS video_likes, c.author, c.text, c.likes, c.published_at " +
+        "SELECT c.id, c.video_id, v.channel_id, c.author, c.text, c.likes, c.published_at " +
           "FROM comments c JOIN videos v ON v.id = c.video_id " +
           "WHERE v.channel_id = ? ORDER BY c.published_at DESC",
       )
@@ -300,9 +320,6 @@ export class SqliteLedger implements Ledger {
       id: string;
       video_id: string;
       channel_id: string;
-      video_title: string;
-      video_views: number;
-      video_likes: number;
       author: string;
       text: string;
       likes: number;
@@ -312,9 +329,6 @@ export class SqliteLedger implements Ledger {
       id: row.id,
       videoId: row.video_id,
       channelId: row.channel_id,
-      videoTitle: row.video_title,
-      videoViews: row.video_views,
-      videoLikes: row.video_likes,
       author: row.author,
       text: row.text,
       likes: row.likes,
@@ -338,8 +352,7 @@ export class SqliteLedger implements Ledger {
   listTranscriptSegments(channelId: string): TranscriptSegmentRecord[] {
     const rows = this.db
       .prepare(
-        "SELECT t.video_id, t.start_seconds, t.end_seconds, t.text, v.channel_id, v.title AS video_title, " +
-          "v.views AS video_views, v.likes AS video_likes, v.published_at AS video_published_at " +
+        "SELECT t.video_id, t.start_seconds, t.end_seconds, t.text, v.channel_id " +
           "FROM transcript_segments t JOIN videos v ON v.id = t.video_id " +
           "WHERE v.channel_id = ? ORDER BY t.start_seconds",
       )
@@ -349,19 +362,11 @@ export class SqliteLedger implements Ledger {
       end_seconds: number;
       text: string;
       channel_id: string;
-      video_title: string;
-      video_views: number;
-      video_likes: number;
-      video_published_at: string;
     }>;
     return rows.map((row) => ({
       id: `${row.video_id}:${row.start_seconds}`,
       videoId: row.video_id,
       channelId: row.channel_id,
-      videoTitle: row.video_title,
-      videoViews: row.video_views,
-      videoLikes: row.video_likes,
-      videoPublishedAt: row.video_published_at,
       start: row.start_seconds,
       end: row.end_seconds,
       text: row.text,
