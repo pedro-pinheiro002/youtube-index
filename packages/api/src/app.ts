@@ -4,10 +4,11 @@ import { existsSync } from "node:fs";
 import type { AppConfig } from "./config.js";
 import { registerChannelRoutes } from "./channels.js";
 import { registerSearchRoutes } from "./search.js";
-import type { Ledger, SearchPort, YouTubeClient } from "@youtube-index/domain";
+import type { IngestionQueue, Ledger, SearchPort, YouTubeClient } from "@youtube-index/domain";
 
 export interface AppDeps {
   ledger: Ledger;
+  fila: IngestionQueue;
   youtube: YouTubeClient;
   search: SearchPort;
 }

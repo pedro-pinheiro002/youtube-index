@@ -1,5 +1,6 @@
-import { createDatabase, SqliteLedger } from "@youtube-index/domain";
-import type { Ledger, SearchParams, SearchPort, SearchResponse, YouTubeClient } from "@youtube-index/domain";
+import { createDatabase, SqliteIngestionQueue, SqliteLedger } from "@youtube-index/domain";
+import type { IngestionQueue, Ledger, SearchParams, SearchPort, SearchResponse, YouTubeClient } from "@youtube-index/domain";
+import type { DatabaseSync } from "node:sqlite";
 import type { AppConfig } from "../src/config.js";
 
 export function makeConfig(overrides: Partial<AppConfig> = {}): AppConfig {
@@ -16,8 +17,16 @@ export function makeConfig(overrides: Partial<AppConfig> = {}): AppConfig {
   };
 }
 
-export function makeLedger(): Ledger {
-  return new SqliteLedger(createDatabase(":memory:"));
+export function makeDb(): DatabaseSync {
+  return createDatabase(":memory:");
+}
+
+export function makeLedger(db: DatabaseSync = makeDb()): Ledger {
+  return new SqliteLedger(db);
+}
+
+export function makeQueue(db: DatabaseSync = makeDb()): IngestionQueue {
+  return new SqliteIngestionQueue(db);
 }
 
 export function makeSearchClient(
