@@ -106,7 +106,7 @@ export function createIngestion(deps: IngestionDeps): Ingestion {
     } while (pageToken);
 
     await deps.projection.addDocuments(channelId, records.map(toVideoDocument));
-    deps.ledger.updatePhase(channelId, "videos", { status: "completed", total: done });
+    deps.ledger.updatePhase(channelId, "videos", { status: "completed", total: deps.ledger.listVideos(channelId).length });
     log.info(`[${channelId}] fase videos concluída: ${done} vídeos (${added} novos)`);
   }
 

@@ -248,7 +248,8 @@ describe("createIngestion", () => {
       expect(ledger.getChannel(CHANNEL_ID)?.phases.videos).toMatchObject({
         status: "completed",
         done: 2,
-        total: 2,
+        // total = Vídeos no Ledger (v1 foi pulado por não ter métricas)
+        total: 1,
       });
     });
 
@@ -1090,6 +1091,47 @@ describe("createIngestion", () => {
         expect(ledger.listVideos(CHANNEL_ID)).toHaveLength(3);
         expect(commentsCalls).toEqual(["v2", "v1"]);
         expect(ledger.listComments(CHANNEL_ID).map((c) => c.id).sort()).toEqual(["c1", "c2", "c3"]);
+      });
+
+      it("no resume da Fase de Vídeos, total é a contagem de Vídeos no Ledger (não o done)", async () => {
+        const ledger = makeLedger();
+        makeChannel(ledger);
+        // Ledger já tem 2 Vídeos de uma ingestão anterior concluída
+        for (const [id, days] of [
+          ["v1", 200],
+          ["v2", 180],
+        ] as const) {
+          ledger.upsertVideo({
+            id,
+            channelId: CHANNEL_ID,
+            title: `Vídeo ${id}`,
+            description: "desc",
+            publishedAt: daysAgo(days),
+            views: 1,
+            likes: 0,
+            durationSeconds: 10,
+          });
+        }
+        ledger.updatePhase(CHANNEL_ID, "videos", { status: "completed" });
+
+        const ingestion = makeIngestion(
+          makeYouTubeClient(
+            [{ videos: [video("v3", "Novo", daysAgo(1)), video("v1", "Antigo", daysAgo(200))], nextPageToken: null }],
+            { v3: { views: 300, likes: 30, durationSeconds: 300 } },
+          ),
+          ledger,
+        );
+
+        await ingestion.runJob(CHANNEL_ID);
+
+        // A Fase para cedo no v1 conhecido: done = 2 (v3 novo + v1 que disparou o stop),
+        // mas total deve ser a contagem de Vídeos no Ledger = 3 (v1, v2, v3).
+        expect(ledger.listVideos(CHANNEL_ID)).toHaveLength(3);
+        expect(ledger.getChannel(CHANNEL_ID)?.phases.videos).toMatchObject({
+          status: "completed",
+          done: 2,
+          total: 3,
+        });
       });
     });
 
