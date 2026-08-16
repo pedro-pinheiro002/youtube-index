@@ -687,6 +687,58 @@ describe("createIngestion", () => {
       expect(channel?.phases.videos.status).toBe("failed");
       expect(channel?.lastError).toBe("cota esgotada");
     });
+
+    it("registra eventos estruturados de cada Fase na ordem de execução", async () => {
+      const ledger = makeLedger();
+      ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
+      const events: Array<{ event: string; data: Record<string, unknown> }> = [];
+      const logger = {
+        info: () => {},
+        warn: () => {},
+        error: () => {},
+        event: (event: string, data: Record<string, unknown>) => {
+          events.push({ event, data });
+        },
+      };
+      const ingestion = createIngestion({
+        youtube: makeYouTubeClient(
+          [
+            {
+              videos: [
+                video("v1", "Primeiro vídeo", "2023-01-01T00:00:00Z"),
+                video("v2", "Segundo vídeo", "2023-01-02T00:00:00Z"),
+                video("v3", "Sem métricas", "2023-01-03T00:00:00Z"),
+              ],
+              nextPageToken: null,
+            },
+          ],
+          { v1: { views: 100, likes: 10, durationSeconds: 120 }, v2: { views: 200, likes: 20, durationSeconds: 240 } },
+        ),
+        transcripts: makeTranscriptFetcher(),
+        ledger,
+        projection: makeProjection(),
+        logger,
+      });
+
+      await ingestion.runJob(CHANNEL_ID);
+
+      expect(events).toEqual([
+        { event: "phase:started", data: { phase: "videos", channelId: CHANNEL_ID } },
+        { event: "video:processed", data: { phase: "videos", channelId: CHANNEL_ID, videoId: "v1" } },
+        { event: "video:processed", data: { phase: "videos", channelId: CHANNEL_ID, videoId: "v2" } },
+        { event: "video:skipped", data: { phase: "videos", channelId: CHANNEL_ID, videoId: "v3", reason: "no-metrics" } },
+        { event: "video:processed", data: { phase: "videos", channelId: CHANNEL_ID, videoId: "v3" } },
+        { event: "phase:completed", data: { phase: "videos", channelId: CHANNEL_ID, total: 3 } },
+        { event: "phase:started", data: { phase: "comments", channelId: CHANNEL_ID } },
+        { event: "video:processed", data: { phase: "comments", channelId: CHANNEL_ID, videoId: "v2" } },
+        { event: "video:processed", data: { phase: "comments", channelId: CHANNEL_ID, videoId: "v1" } },
+        { event: "phase:completed", data: { phase: "comments", channelId: CHANNEL_ID, total: 2 } },
+        { event: "phase:started", data: { phase: "transcripts", channelId: CHANNEL_ID } },
+        { event: "video:processed", data: { phase: "transcripts", channelId: CHANNEL_ID, videoId: "v2" } },
+        { event: "video:processed", data: { phase: "transcripts", channelId: CHANNEL_ID, videoId: "v1" } },
+        { event: "phase:completed", data: { phase: "transcripts", channelId: CHANNEL_ID, total: 2 } },
+      ]);
+    });
   });
 
   describe("Sincronização e resume guiados pelo Ledger", () => {
