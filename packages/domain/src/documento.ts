@@ -69,10 +69,27 @@ export interface Projection {
    * Remove do Índice do Canal todos os Documentos que casam com o `predicate`.
    * Usado para varrer Documentos órfão durante a Sincronização (ex.: Vídeo
    * antigo que saiu do top-50 e teve seus Comentários apagados do Ledger).
+   *
+   * O predicate recebe apenas os campos mínimos que o Índice consegue
+   * devolver de forma barata (`id`, `type`, `channelId`, `videoId`) — não o
+   * Documento inteiro. Isso mantém a varredura honesta com o que o adapter
+   * recupera do Meilisearch, sem fingir acesso a campos não retornados.
    */
-  remove(channelId: string, predicate: (doc: Documento) => boolean): Promise<void>;
+  remove(channelId: string, predicate: (hit: ProjectionHit) => boolean): Promise<void>;
   /** Esvazia o Índice do Canal — usado em re-ingestão a partir do zero. */
   clear(channelId: string): Promise<void>;
+}
+
+/**
+ * O subconjunto de um Documento que o port `remove` devolve ao predicate.
+ * Reflete os campos que o adapter busca no Índice durante a varredura
+ * (`attributesToRetrieve`); o port promete só o que o adapter pode honrar.
+ */
+export interface ProjectionHit {
+  id: string;
+  type: SearchDocumentType;
+  channelId: string;
+  videoId?: string;
 }
 
 /** Atributos indexados para busca full-text no Meilisearch. */

@@ -364,14 +364,6 @@ describe("MeilisearchProjection", () => {
 
       expect(result).toEqual({ hits: [], total: 0, query: "x" });
     });
-
-    it("lança erro quando a chave restrita ainda não foi configurada", async () => {
-      // Removido: a fábrica `createMeilisearchProjection` sempre provisiona a chave
-      // restrita antes de devolver a instância, então o caminho "chave ausente" não é
-      // mais alcançável. `getOrCreateRestrictedSearchKey` permanece idempotente como
-      // salvaguarda para construções futuras via fábrica alternativa.
-      expect(true).toBe(true);
-    });
   });
 
   describe("remove", () => {
@@ -381,7 +373,11 @@ describe("MeilisearchProjection", () => {
         const base = responder(req);
         if (req.url.endsWith("/search") && req.method === "POST") {
           return {
-            hits: [{ id: "v1" }, { id: "v2" }, { id: "v3" }],
+            hits: [
+              { id: "v1", type: "video", channelId: CHANNEL_ID },
+              { id: "v2", type: "video", channelId: CHANNEL_ID },
+              { id: "v3", type: "video", channelId: CHANNEL_ID },
+            ],
             estimatedTotalHits: 3,
           };
         }
@@ -389,10 +385,15 @@ describe("MeilisearchProjection", () => {
       });
       const client = await makeClient(fetchImpl);
 
-      await client.remove(CHANNEL_ID, (doc) => doc.id !== "v2");
+      await client.remove(CHANNEL_ID, (hit) => hit.id !== "v2");
 
       const searchCall = calls.find((c) => c.url.endsWith("/search") && c.method === "POST");
-      expect(searchCall?.body).toEqual({ q: "", limit: 1000, offset: 0, attributesToRetrieve: ["id"] });
+      expect(searchCall?.body).toEqual({
+        q: "",
+        limit: 1000,
+        offset: 0,
+        attributesToRetrieve: ["id", "type", "videoId", "channelId"],
+      });
       const deleteCall = calls.find((c) => c.url.endsWith("/documents/delete-batch") && c.method === "POST");
       expect(deleteCall?.method).toBe("POST");
       expect(deleteCall?.authorization).toBe(`Bearer ${MASTER_KEY}`);
@@ -402,8 +403,8 @@ describe("MeilisearchProjection", () => {
 
     it("pagina a varredura quando há mais Documentos do que o limite da página", async () => {
       const pages = [
-        Array.from({ length: 1000 }, (_, i) => ({ id: `id-${i}` })),
-        Array.from({ length: 5 }, (_, i) => ({ id: `id-${1000 + i}` })),
+        Array.from({ length: 1000 }, (_, i) => ({ id: `id-${i}`, type: "video", channelId: CHANNEL_ID })),
+        Array.from({ length: 5 }, (_, i) => ({ id: `id-${1000 + i}`, type: "video", channelId: CHANNEL_ID })),
       ];
       let pageIndex = 0;
       const responder = baseResponder();
@@ -431,7 +432,13 @@ describe("MeilisearchProjection", () => {
       const { fetchImpl, calls } = makeFetch((req) => {
         const base = responder(req);
         if (req.url.endsWith("/search") && req.method === "POST") {
-          return { hits: [{ id: "v1" }, { id: "v2" }], estimatedTotalHits: 2 };
+          return {
+            hits: [
+              { id: "v1", type: "video", channelId: CHANNEL_ID },
+              { id: "v2", type: "video", channelId: CHANNEL_ID },
+            ],
+            estimatedTotalHits: 2,
+          };
         }
         return base;
       });
@@ -442,24 +449,33 @@ describe("MeilisearchProjection", () => {
       expect(calls.find((c) => c.url.endsWith("/documents/delete-batch"))).toBeUndefined();
     });
 
-    it("passa o tipo do Documento (discriminado) para o predicate", async () => {
+    it("passa o tipo do Documento (discriminado) e o videoId para o predicate", async () => {
       const responder = baseResponder();
       const { fetchImpl, calls } = makeFetch((req) => {
         const base = responder(req);
         if (req.url.endsWith("/search") && req.method === "POST") {
-          return { hits: [{ id: "c1", type: "comment" }, { id: "s1", type: "segment" }], estimatedTotalHits: 2 };
+          return {
+            hits: [
+              { id: "c1", type: "comment", channelId: CHANNEL_ID, videoId: "v1" },
+              { id: "s1", type: "segment", channelId: CHANNEL_ID, videoId: "v1" },
+            ],
+            estimatedTotalHits: 2,
+          };
         }
         return base;
       });
       const client = await makeClient(fetchImpl);
 
       const seenTypes = new Set<string>();
-      await client.remove(CHANNEL_ID, (doc) => {
-        seenTypes.add(doc.type);
-        return doc.type === "segment";
+      const seenVideoIds = new Set<string>();
+      await client.remove(CHANNEL_ID, (hit) => {
+        seenTypes.add(hit.type);
+        seenVideoIds.add(hit.videoId ?? "");
+        return hit.type === "segment";
       });
 
       expect(seenTypes).toEqual(new Set(["comment", "segment"]));
+      expect(seenVideoIds).toEqual(new Set(["v1"]));
       const deleteCall = calls.find((c) => c.url.endsWith("/documents/delete-batch"));
       expect(deleteCall?.body).toEqual(["s1"]);
     });

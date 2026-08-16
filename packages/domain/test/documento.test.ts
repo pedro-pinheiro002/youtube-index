@@ -9,6 +9,7 @@ import {
   videoUrl,
   type Documento,
   type Projection,
+  type ProjectionHit,
 } from "../src/documento.js";
 
 const CHANNEL_ID = "UCY8iijN1AkyDCh1Z9akcqUA";
@@ -142,7 +143,7 @@ describe("Projection port", () => {
 
   function makeFakeProjection() {
     const added: Array<{ channelId: string; documents: Documento[] }> = [];
-    const removed: Array<{ channelId: string; predicate: (doc: Documento) => boolean }> = [];
+    const removed: Array<{ channelId: string; predicate: (hit: ProjectionHit) => boolean }> = [];
     const cleared: string[] = [];
     const projection: Projection = {
       addDocuments: async (channelId, documents) => {
@@ -166,7 +167,7 @@ describe("Projection port", () => {
 
   it("recebe o channelId e o predicate em remove", async () => {
     const fake = makeFakeProjection();
-    const predicate = (doc: Documento) => doc.type === "comment";
+    const predicate: (hit: ProjectionHit) => boolean = (hit) => hit.type === "comment";
     await fake.projection.remove(CHANNEL_ID, predicate);
     expect(fake.removed).toEqual([{ channelId: CHANNEL_ID, predicate }]);
   });
@@ -177,11 +178,11 @@ describe("Projection port", () => {
     expect(fake.cleared).toEqual([CHANNEL_ID]);
   });
 
-  it("o predicate em remove é aplicável aos três tipos de Documento", async () => {
+  it("o predicate em remove recebe o subconjunto mínimo do Documento (ProjectionHit)", async () => {
     const fake = makeFakeProjection();
-    const observed: Array<Documento["type"]> = [];
-    await fake.projection.remove(CHANNEL_ID, (doc) => {
-      observed.push(doc.type);
+    const observed: Array<ProjectionHit> = [];
+    await fake.projection.remove(CHANNEL_ID, (hit) => {
+      observed.push(hit);
       return false;
     });
     expect(observed).toEqual([]);

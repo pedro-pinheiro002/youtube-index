@@ -2,6 +2,7 @@ import {
   type Documento,
   FILTERABLE_ATTRIBUTES,
   type Projection,
+  type ProjectionHit,
   SEARCHABLE_ATTRIBUTES,
   SORTABLE_ATTRIBUTES,
   STOP_WORDS_PT,
@@ -133,7 +134,7 @@ export class MeilisearchProjection implements Projection, SearchPort {
     });
   }
 
-  async remove(channelId: string, predicate: (doc: Documento) => boolean): Promise<void> {
+  async remove(channelId: string, predicate: (hit: ProjectionHit) => boolean): Promise<void> {
     const uid = this.indexUid(channelId);
     const idsToDelete: string[] = [];
     let offset = 0;
@@ -146,16 +147,29 @@ export class MeilisearchProjection implements Projection, SearchPort {
           q: "",
           limit: pageSize,
           offset,
-          attributesToRetrieve: ["id"],
+          attributesToRetrieve: ["id", "type", "videoId", "channelId"],
         },
       })) as { hits: Array<Record<string, unknown>> };
       for (const hit of page.hits) {
         const id = hit.id;
+        const type = hit.type;
+        const channelIdHit = hit.channelId;
         if (typeof id !== "string") {
           continue;
         }
-        const doc = hit as unknown as Documento;
-        if (predicate(doc)) {
+        if (type !== "video" && type !== "comment" && type !== "segment") {
+          continue;
+        }
+        if (typeof channelIdHit !== "string") {
+          continue;
+        }
+        const projectionHit: ProjectionHit = {
+          id,
+          type,
+          channelId: channelIdHit,
+          ...(typeof hit.videoId === "string" ? { videoId: hit.videoId } : {}),
+        };
+        if (predicate(projectionHit)) {
           idsToDelete.push(id);
         }
       }
