@@ -1,9 +1,4 @@
-import type {
-  CommentSearchHit,
-  SearchHit,
-  SegmentSearchHit,
-  VideoSearchHit,
-} from "./types";
+import type { SearchHit } from "./types";
 
 export function highlightHtml(text: string): string {
   const escaped = text
@@ -47,7 +42,7 @@ function Highlighted({ text }: { text: string }) {
   return <span dangerouslySetInnerHTML={{ __html: highlightHtml(text) }} />;
 }
 
-function VideoCard({ hit }: { hit: VideoSearchHit }) {
+function VideoCard({ hit }: { hit: Extract<SearchHit, { type: "video" }> }) {
   return (
     <article>
       <a href={hit.url} target="_blank" rel="noreferrer">
@@ -71,7 +66,7 @@ function VideoCard({ hit }: { hit: VideoSearchHit }) {
   );
 }
 
-function CommentCard({ hit }: { hit: CommentSearchHit }) {
+function CommentCard({ hit }: { hit: Extract<SearchHit, { type: "comment" }> }) {
   return (
     <article>
       <a href={hit.url} target="_blank" rel="noreferrer">
@@ -97,7 +92,7 @@ function CommentCard({ hit }: { hit: CommentSearchHit }) {
   );
 }
 
-function SegmentCard({ hit }: { hit: SegmentSearchHit }) {
+function SegmentCard({ hit }: { hit: Extract<SearchHit, { type: "segment" }> }) {
   return (
     <article>
       <a href={hit.url} target="_blank" rel="noreferrer">
