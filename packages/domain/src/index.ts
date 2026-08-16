@@ -21,6 +21,8 @@ export { SqliteLedger } from "./ledger.js";
 export { applySchema, createDatabase, openDatabase, SCHEMA } from "./schema.js";
 export type { Ingestion, IngestionDeps, IngestionLogger } from "./ingestion.js";
 export { createIngestion } from "./ingestion.js";
+export type { IngestionQueue } from "./ingestion-queue.js";
+export { SqliteIngestionQueue } from "./ingestion-queue.js";
 export type {
   CommentSearchDocument,
   Projection,
