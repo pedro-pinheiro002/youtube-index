@@ -1,5 +1,7 @@
 import {
+  type CommentSearchDocument,
   type Projection,
+  type SegmentSearchDocument,
   toCommentDocument,
   toSegmentDocument,
   toVideoDocument,
@@ -117,7 +119,7 @@ export function createIngestion(deps: IngestionDeps): Ingestion {
 
     let done = 0;
     let added = 0;
-    const records: CommentRecord[] = [];
+    const documents: CommentSearchDocument[] = [];
     for (const video of videos) {
       if (isSync) {
         if (!isRecent(video.publishedAt, recentWindowDays)) {
@@ -135,21 +137,22 @@ export function createIngestion(deps: IngestionDeps): Ingestion {
         } else {
           deps.ledger.deleteCommentsForVideo(video.id);
           deps.ledger.clearCommentAbsence(video.id);
+          const context = deps.ledger.videoContext(video.id);
+          if (!context) {
+            throw new Error(`vídeo ${video.id} sem contexto no Ledger`);
+          }
           for (const comment of comments) {
             const record: CommentRecord = {
               id: comment.id,
               videoId: video.id,
               channelId,
-              videoTitle: video.title,
-              videoViews: video.views,
-              videoLikes: video.likes,
               author: comment.author,
               text: comment.text,
               likes: comment.likes,
               publishedAt: comment.publishedAt,
             };
             deps.ledger.upsertComment(record);
-            records.push(record);
+            documents.push(toCommentDocument(record, context));
             added += 1;
           }
         }
@@ -163,7 +166,7 @@ export function createIngestion(deps: IngestionDeps): Ingestion {
       deps.ledger.updatePhase(channelId, "comments", { done });
     }
 
-    await deps.projection.addDocuments(channelId, records.map(toCommentDocument));
+    await deps.projection.addDocuments(channelId, documents);
     deps.ledger.updatePhase(channelId, "comments", { status: "completed", total: videos.length });
     log.info(`[${channelId}] fase comments concluída: ${done}/${videos.length} vídeos (${added} comentários)`);
   }
@@ -175,7 +178,7 @@ export function createIngestion(deps: IngestionDeps): Ingestion {
 
     let done = 0;
     let added = 0;
-    const records: TranscriptSegmentRecord[] = [];
+    const documents: SegmentSearchDocument[] = [];
     for (const video of videos) {
       if (deps.ledger.hasTranscriptIngestion(video.id)) {
         done += 1;
@@ -183,21 +186,21 @@ export function createIngestion(deps: IngestionDeps): Ingestion {
       }
       const transcript = await deps.transcripts.fetchTranscript(video.id);
       if (transcript) {
+        const context = deps.ledger.videoContext(video.id);
+        if (!context) {
+          throw new Error(`vídeo ${video.id} sem contexto no Ledger`);
+        }
         for (const segment of transcript.segments) {
           const record: TranscriptSegmentRecord = {
             id: `${video.id}:${segment.start}`,
             videoId: video.id,
             channelId,
-            videoTitle: video.title,
-            videoViews: video.views,
-            videoLikes: video.likes,
-            videoPublishedAt: video.publishedAt,
             start: segment.start,
             end: segment.start + segment.duration,
             text: segment.text,
           };
           deps.ledger.upsertTranscriptSegment(record);
-          records.push(record);
+          documents.push(toSegmentDocument(record, context));
           added += 1;
         }
       } else {
@@ -207,7 +210,7 @@ export function createIngestion(deps: IngestionDeps): Ingestion {
       deps.ledger.updatePhase(channelId, "transcripts", { done });
     }
 
-    await deps.projection.addDocuments(channelId, records.map(toSegmentDocument));
+    await deps.projection.addDocuments(channelId, documents);
     deps.ledger.updatePhase(channelId, "transcripts", { status: "completed", total: videos.length });
     log.info(`[${channelId}] fase transcripts concluída: ${done}/${videos.length} vídeos (${added} segmentos)`);
   }

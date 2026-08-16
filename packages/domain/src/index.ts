@@ -15,6 +15,7 @@ export type {
   CommentRecord,
   Ledger,
   TranscriptSegmentRecord,
+  VideoContext,
   VideoRecord,
 } from "./ledger.js";
 export { SqliteLedger } from "./ledger.js";

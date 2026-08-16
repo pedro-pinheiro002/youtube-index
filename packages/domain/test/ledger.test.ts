@@ -140,16 +140,13 @@ describe("SqliteLedger", () => {
       return channel;
     }
 
-    it("grava um Comentário ligado ao Vídeo e o devolve com o título do Vídeo", () => {
+    it("grava um Comentário ligado ao Vídeo e o devolve como linha canônica", () => {
       const ledger = makeLedger();
       makeChannelWithVideo(ledger);
       ledger.upsertComment({
         id: "c1",
         videoId: "v1",
         channelId: CHANNEL_ID,
-        videoTitle: "Primeiro vídeo",
-        videoViews: 100,
-        videoLikes: 10,
         author: "Gato Funky",
         text: "Primeiro comentário",
         likes: 42,
@@ -159,18 +156,16 @@ describe("SqliteLedger", () => {
       const comments = ledger.listComments(CHANNEL_ID);
 
       expect(comments).toEqual([
-        expect.objectContaining({
+        {
           id: "c1",
           videoId: "v1",
           channelId: CHANNEL_ID,
-          videoTitle: "Primeiro vídeo",
           author: "Gato Funky",
           text: "Primeiro comentário",
           likes: 42,
           publishedAt: "2023-01-02T00:00:00Z",
-        }),
+        },
       ]);
-      expect(comments[0]).toMatchObject({ videoViews: 100, videoLikes: 10 });
     });
 
     it("é idempotente quando o mesmo id de Comentário é gravado de novo", () => {
@@ -180,9 +175,6 @@ describe("SqliteLedger", () => {
         id: "c1",
         videoId: "v1",
         channelId: CHANNEL_ID,
-        videoTitle: "Primeiro vídeo",
-        videoViews: 100,
-        videoLikes: 10,
         author: "Gato Funky",
         text: "Primeiro comentário",
         likes: 42,
@@ -223,17 +215,13 @@ describe("SqliteLedger", () => {
       return channel;
     }
 
-    it("grava um Segmento ligado ao Vídeo e o devolve com o contexto do Vídeo", () => {
+    it("grava um Segmento ligado ao Vídeo e o devolve como linha canônica", () => {
       const ledger = makeLedger();
       makeChannelWithVideo(ledger);
       ledger.upsertTranscriptSegment({
         id: "v1:142",
         videoId: "v1",
         channelId: CHANNEL_ID,
-        videoTitle: "Primeiro vídeo",
-        videoViews: 100,
-        videoLikes: 10,
-        videoPublishedAt: "2023-01-01T00:00:00Z",
         start: 142,
         end: 150,
         text: "trecho da transcrição",
@@ -242,18 +230,15 @@ describe("SqliteLedger", () => {
       const segments = ledger.listTranscriptSegments(CHANNEL_ID);
 
       expect(segments).toEqual([
-        expect.objectContaining({
+        {
           id: "v1:142",
           videoId: "v1",
           channelId: CHANNEL_ID,
-          videoTitle: "Primeiro vídeo",
-          videoPublishedAt: "2023-01-01T00:00:00Z",
           start: 142,
           end: 150,
           text: "trecho da transcrição",
-        }),
+        },
       ]);
-      expect(segments[0]).toMatchObject({ videoViews: 100, videoLikes: 10 });
     });
 
     it("é idempotente quando o mesmo Segmento (vídeo + start) é gravado de novo", () => {
@@ -263,10 +248,6 @@ describe("SqliteLedger", () => {
         id: "v1:142",
         videoId: "v1",
         channelId: CHANNEL_ID,
-        videoTitle: "Primeiro vídeo",
-        videoViews: 100,
-        videoLikes: 10,
-        videoPublishedAt: "2023-01-01T00:00:00Z",
         start: 142,
         end: 150,
         text: "trecho da transcrição",
@@ -370,6 +351,46 @@ describe("SqliteLedger", () => {
     });
   });
 
+  describe("videoContext", () => {
+    function makeChannelWithVideo(ledger: SqliteLedger) {
+      ledger.createChannel({
+        channelId: CHANNEL_ID,
+        handle: "@funkyblackcat",
+        title: "Funky Black Cat",
+      });
+      ledger.upsertVideo({
+        id: "v1",
+        channelId: CHANNEL_ID,
+        title: "Primeiro vídeo",
+        description: "Uma descrição",
+        publishedAt: "2023-01-01T00:00:00Z",
+        views: 100,
+        likes: 10,
+        durationSeconds: 120,
+      });
+    }
+
+    it("devolve o contexto canônico do Vídeo (sem description/durationSeconds)", () => {
+      const ledger = makeLedger();
+      makeChannelWithVideo(ledger);
+
+      expect(ledger.videoContext("v1")).toEqual({
+        id: "v1",
+        title: "Primeiro vídeo",
+        views: 100,
+        likes: 10,
+        publishedAt: "2023-01-01T00:00:00Z",
+      });
+    });
+
+    it("devolve null para um Vídeo desconhecido", () => {
+      const ledger = makeLedger();
+      makeChannelWithVideo(ledger);
+
+      expect(ledger.videoContext("v2")).toBeNull();
+    });
+  });
+
   describe("comment_absences", () => {
     function makeChannelWithVideos(ledger: SqliteLedger) {
       ledger.createChannel({
@@ -455,9 +476,6 @@ describe("SqliteLedger", () => {
         id: "c1",
         videoId: "v1",
         channelId: CHANNEL_ID,
-        videoTitle: "Primeiro vídeo",
-        videoViews: 100,
-        videoLikes: 10,
         author: "Gato Funky",
         text: "Primeiro comentário",
         likes: 42,
@@ -507,9 +525,6 @@ describe("SqliteLedger", () => {
         id: "c1",
         videoId: "v1",
         channelId: CHANNEL_ID,
-        videoTitle: "Vídeo v1",
-        videoViews: 100,
-        videoLikes: 10,
         author: "A",
         text: "Comentário de v1",
         likes: 1,
@@ -519,9 +534,6 @@ describe("SqliteLedger", () => {
         id: "c2",
         videoId: "v2",
         channelId: CHANNEL_ID,
-        videoTitle: "Vídeo v2",
-        videoViews: 100,
-        videoLikes: 10,
         author: "B",
         text: "Comentário de v2",
         likes: 2,
@@ -560,10 +572,6 @@ describe("SqliteLedger", () => {
         id: "v1:0",
         videoId: "v1",
         channelId: CHANNEL_ID,
-        videoTitle: "Primeiro vídeo",
-        videoViews: 100,
-        videoLikes: 10,
-        videoPublishedAt: "2023-01-01T00:00:00Z",
         start: 0,
         end: 10,
         text: "trecho",

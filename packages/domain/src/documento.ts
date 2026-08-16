@@ -1,4 +1,4 @@
-import type { CommentRecord, TranscriptSegmentRecord, VideoRecord } from "./ledger.js";
+import type { CommentRecord, TranscriptSegmentRecord, VideoContext, VideoRecord } from "./ledger.js";
 
 /**
  * Os três tipos de Documento que vivem no Índice do Meilisearch,
@@ -126,17 +126,17 @@ export function toVideoDocument(video: VideoRecord): VideoSearchDocument {
   };
 }
 
-export function toCommentDocument(comment: CommentRecord): CommentSearchDocument {
+export function toCommentDocument(comment: CommentRecord, videoContext: VideoContext): CommentSearchDocument {
   return {
     id: comment.id,
     channelId: comment.channelId,
     type: "comment",
     videoId: comment.videoId,
-    videoTitle: comment.videoTitle,
+    videoTitle: videoContext.title,
     videoUrl: videoUrl(comment.videoId),
     videoThumbnail: videoThumbnail(comment.videoId),
-    videoViews: comment.videoViews,
-    videoLikes: comment.videoLikes,
+    videoViews: videoContext.views,
+    videoLikes: videoContext.likes,
     url: commentUrl(comment.videoId, comment.id),
     author: comment.author,
     text: comment.text,
@@ -145,21 +145,21 @@ export function toCommentDocument(comment: CommentRecord): CommentSearchDocument
   };
 }
 
-export function toSegmentDocument(segment: TranscriptSegmentRecord): SegmentSearchDocument {
+export function toSegmentDocument(segment: TranscriptSegmentRecord, videoContext: VideoContext): SegmentSearchDocument {
   return {
     id: segment.id,
     channelId: segment.channelId,
     type: "segment",
     videoId: segment.videoId,
-    videoTitle: segment.videoTitle,
+    videoTitle: videoContext.title,
     videoUrl: videoUrl(segment.videoId),
     videoThumbnail: videoThumbnail(segment.videoId),
-    videoViews: segment.videoViews,
-    videoLikes: segment.videoLikes,
+    videoViews: videoContext.views,
+    videoLikes: videoContext.likes,
     text: segment.text,
     start: segment.start,
     end: segment.end,
     url: segmentUrl(segment.videoId, segment.start),
-    publishedAt: segment.videoPublishedAt,
+    publishedAt: videoContext.publishedAt,
   };
 }
