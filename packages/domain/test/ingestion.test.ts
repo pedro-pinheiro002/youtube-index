@@ -326,7 +326,7 @@ describe("createIngestion", () => {
     });
   });
 
-  describe("runCommentsPhase", () => {
+  describe("Fase de Comentários (via _runPhase seam)", () => {
     function makeChannelWithVideos(): { ledger: Ledger; ingestion: ReturnType<typeof makeIngestion> } {
       const ledger = makeLedger();
       ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
@@ -350,14 +350,14 @@ describe("createIngestion", () => {
 
     it("busca Comentários por Vídeo e os grava no Ledger como linhas canônicas", async () => {
       const { ledger, ingestion } = makeChannelWithVideos();
-      await ingestion.runVideosPhase(CHANNEL_ID);
+      await ingestion._runPhase("videos", CHANNEL_ID);
       const youtube = makeYouTubeClient([], {}, {
         v1: [{ id: "c1", author: "Gato Funky", text: "Primeiro comentário", likes: 42, publishedAt: "2023-01-02T00:00:00Z" }],
         v2: [{ id: "c2", author: "Cão Legal", text: "Segundo comentário", likes: 7, publishedAt: "2023-01-03T00:00:00Z" }],
       });
       const ingestionComments = createIngestion({ youtube, transcripts: makeTranscriptFetcher(), ledger, projection: makeProjection() });
 
-      await ingestionComments.runCommentsPhase(CHANNEL_ID);
+      await ingestionComments._runPhase("comments", CHANNEL_ID);
 
       const stored = ledger.listComments(CHANNEL_ID);
       expect(stored).toHaveLength(2);
@@ -387,14 +387,14 @@ describe("createIngestion", () => {
 
     it("projeta Documentos de Comentário com contexto denormalizado do Vídeo", async () => {
       const { ledger, ingestion } = makeChannelWithVideos();
-      await ingestion.runVideosPhase(CHANNEL_ID);
+      await ingestion._runPhase("videos", CHANNEL_ID);
       const projection = makeRecordingProjection();
       const youtube = makeYouTubeClient([], {}, {
         v1: [{ id: "c1", author: "Gato Funky", text: "Primeiro comentário", likes: 42, publishedAt: "2023-01-02T00:00:00Z" }],
       });
       const ingestionComments = createIngestion({ youtube, transcripts: makeTranscriptFetcher(), ledger, projection });
 
-      await ingestionComments.runCommentsPhase(CHANNEL_ID);
+      await ingestionComments._runPhase("comments", CHANNEL_ID);
 
       expect(projection.calls).toEqual([
         {
@@ -419,7 +419,7 @@ describe("createIngestion", () => {
 
     it("pula Vídeos com Comentários desativados sem derrubar a Fase", async () => {
       const { ledger, ingestion } = makeChannelWithVideos();
-      await ingestion.runVideosPhase(CHANNEL_ID);
+      await ingestion._runPhase("videos", CHANNEL_ID);
       const projection = makeRecordingProjection();
       const youtube = makeYouTubeClient([], {}, {
         v1: new CommentsDisabledError("v1"),
@@ -427,7 +427,7 @@ describe("createIngestion", () => {
       });
       const ingestionComments = createIngestion({ youtube, transcripts: makeTranscriptFetcher(), ledger, projection });
 
-      await ingestionComments.runCommentsPhase(CHANNEL_ID);
+      await ingestionComments._runPhase("comments", CHANNEL_ID);
 
       const stored = ledger.listComments(CHANNEL_ID);
       expect(stored).toHaveLength(1);
@@ -441,7 +441,7 @@ describe("createIngestion", () => {
 
     it("conclui a Fase quando nenhum Vídeo tem Comentários", async () => {
       const { ledger, ingestion } = makeChannelWithVideos();
-      await ingestion.runVideosPhase(CHANNEL_ID);
+      await ingestion._runPhase("videos", CHANNEL_ID);
       const projection = makeRecordingProjection();
       const ingestionComments = createIngestion({
         youtube: makeYouTubeClient([], {}),
@@ -450,7 +450,7 @@ describe("createIngestion", () => {
         projection,
       });
 
-      await ingestionComments.runCommentsPhase(CHANNEL_ID);
+      await ingestionComments._runPhase("comments", CHANNEL_ID);
 
       expect(ledger.listComments(CHANNEL_ID)).toEqual([]);
       expect(ledger.getChannel(CHANNEL_ID)?.phases.comments).toMatchObject({
@@ -461,7 +461,7 @@ describe("createIngestion", () => {
     });
   });
 
-  describe("runTranscriptsPhase", () => {
+  describe("Fase de Transcrições (via _runPhase seam)", () => {
     function makeChannelWithVideos(): { ledger: Ledger; ingestion: ReturnType<typeof makeIngestion> } {
       const ledger = makeLedger();
       ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
@@ -485,7 +485,7 @@ describe("createIngestion", () => {
 
     it("busca Transcrições pelo TranscriptFetcher e grava os Segmentos no Ledger com timestamp", async () => {
       const { ledger, ingestion } = makeChannelWithVideos();
-      await ingestion.runVideosPhase(CHANNEL_ID);
+      await ingestion._runPhase("videos", CHANNEL_ID);
       const fetcher = makeTranscriptFetcherWith({
         v1: {
           videoId: "v1",
@@ -503,7 +503,7 @@ describe("createIngestion", () => {
         projection: makeProjection(),
       });
 
-      await ingestionTranscripts.runTranscriptsPhase(CHANNEL_ID);
+      await ingestionTranscripts._runPhase("transcripts", CHANNEL_ID);
 
       const segments = ledger.listTranscriptSegments(CHANNEL_ID);
       expect(segments).toEqual([
@@ -533,7 +533,7 @@ describe("createIngestion", () => {
 
     it("projeta Documentos de Segmento com deep-link ao momento exato", async () => {
       const { ledger, ingestion } = makeChannelWithVideos();
-      await ingestion.runVideosPhase(CHANNEL_ID);
+      await ingestion._runPhase("videos", CHANNEL_ID);
       const projection = makeRecordingProjection();
       const fetcher = makeTranscriptFetcherWith({
         v1: { videoId: "v1", segments: [{ start: 142, duration: 8, text: "trecho com deep-link" }] },
@@ -545,7 +545,7 @@ describe("createIngestion", () => {
         projection,
       });
 
-      await ingestionTranscripts.runTranscriptsPhase(CHANNEL_ID);
+      await ingestionTranscripts._runPhase("transcripts", CHANNEL_ID);
 
       expect(projection.calls).toEqual([
         {
@@ -572,7 +572,7 @@ describe("createIngestion", () => {
 
     it("marca Vídeos sem Transcrição no Ledger e não derruba a Fase", async () => {
       const { ledger, ingestion } = makeChannelWithVideos();
-      await ingestion.runVideosPhase(CHANNEL_ID);
+      await ingestion._runPhase("videos", CHANNEL_ID);
       const fetcher = makeTranscriptFetcherWith({
         v1: { videoId: "v1", segments: [{ start: 0, duration: 10, text: "único trecho" }] },
         v2: null,
@@ -584,7 +584,7 @@ describe("createIngestion", () => {
         projection: makeProjection(),
       });
 
-      await ingestionTranscripts.runTranscriptsPhase(CHANNEL_ID);
+      await ingestionTranscripts._runPhase("transcripts", CHANNEL_ID);
 
       expect(ledger.listTranscriptAbsences(CHANNEL_ID)).toEqual(["v2"]);
       expect(ledger.listTranscriptSegments(CHANNEL_ID)).toHaveLength(1);
@@ -597,7 +597,7 @@ describe("createIngestion", () => {
 
     it("conclui a Fase quando nenhum Vídeo tem Transcrição", async () => {
       const { ledger, ingestion } = makeChannelWithVideos();
-      await ingestion.runVideosPhase(CHANNEL_ID);
+      await ingestion._runPhase("videos", CHANNEL_ID);
       const ingestionTranscripts = createIngestion({
         youtube: makeYouTubeClient([], {}),
         transcripts: makeTranscriptFetcher(),
@@ -605,7 +605,7 @@ describe("createIngestion", () => {
         projection: makeProjection(),
       });
 
-      await ingestionTranscripts.runTranscriptsPhase(CHANNEL_ID);
+      await ingestionTranscripts._runPhase("transcripts", CHANNEL_ID);
 
       expect(ledger.listTranscriptSegments(CHANNEL_ID)).toEqual([]);
       expect(ledger.listTranscriptAbsences(CHANNEL_ID)).toEqual(["v1", "v2"]);
@@ -783,7 +783,7 @@ describe("createIngestion", () => {
       ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
     }
 
-    describe("runVideosPhase em Sincronização", () => {
+    describe("Fase de Vídeos em Sincronização (via _runPhase seam)", () => {
       it("para no primeiro Vídeo já conhecido e não re-busca métricas de Vídeos ingeridos", async () => {
         const ledger = makeLedger();
         makeChannel(ledger);
@@ -793,7 +793,7 @@ describe("createIngestion", () => {
           }),
           ledger,
         );
-        await first.runVideosPhase(CHANNEL_ID);
+        await first._runPhase("videos", CHANNEL_ID);
 
         const statsCalls: string[] = [];
         const listUploadsCalls: Array<string | null> = [];
@@ -812,7 +812,7 @@ describe("createIngestion", () => {
           ledger,
         );
 
-        await second.runVideosPhase(CHANNEL_ID);
+        await second._runPhase("videos", CHANNEL_ID);
 
         expect(statsCalls).toEqual(["v3"]);
         expect(listUploadsCalls).toEqual([null]);
@@ -860,7 +860,7 @@ describe("createIngestion", () => {
           ledger,
         );
 
-        await ingestion.runVideosPhase(CHANNEL_ID);
+        await ingestion._runPhase("videos", CHANNEL_ID);
 
         expect(statsCalls).toEqual(["v3"]);
         expect(ledger.listVideos(CHANNEL_ID).map((v) => v.id)).toEqual(["v3", "v2", "v1"]);
@@ -868,7 +868,7 @@ describe("createIngestion", () => {
       });
     });
 
-    describe("runCommentsPhase em resume", () => {
+    describe("Fase de Comentários em resume (via _runPhase seam)", () => {
       function makeChannelWithVideos(ledger: Ledger): void {
         makeChannel(ledger);
         for (const [id, days] of [
@@ -921,7 +921,7 @@ describe("createIngestion", () => {
           projection: makeProjection(),
         });
 
-        await ingestion.runCommentsPhase(CHANNEL_ID);
+        await ingestion._runPhase("comments", CHANNEL_ID);
 
         expect(commentsCalls).toEqual(["v2", "v4"]);
         expect(ledger.listComments(CHANNEL_ID).map((c) => c.id).sort()).toEqual(["c1", "c2", "c4"]);
@@ -990,7 +990,7 @@ describe("createIngestion", () => {
           projection: makeProjection(),
         });
 
-        await ingestion.runCommentsPhase(CHANNEL_ID);
+        await ingestion._runPhase("comments", CHANNEL_ID);
 
         expect(commentsCalls).toEqual(["v1"]);
         const comments = ledger.listComments(CHANNEL_ID);
@@ -1027,7 +1027,7 @@ describe("createIngestion", () => {
           recentWindowDays: 5,
         });
 
-        await ingestion.runCommentsPhase(CHANNEL_ID);
+        await ingestion._runPhase("comments", CHANNEL_ID);
 
         expect(commentsCalls).toEqual(["v1"]);
       });
@@ -1060,14 +1060,14 @@ describe("createIngestion", () => {
           projection: makeProjection(),
         });
 
-        await ingestion.runCommentsPhase(CHANNEL_ID);
+        await ingestion._runPhase("comments", CHANNEL_ID);
 
         expect(ledger.listCommentAbsences(CHANNEL_ID)).toEqual(["v1", "v2"]);
         expect(ledger.getChannel(CHANNEL_ID)?.phases.comments).toMatchObject({ status: "completed", done: 2, total: 2 });
       });
     });
 
-    describe("runTranscriptsPhase em resume", () => {
+    describe("Fase de Transcrições em resume (via _runPhase seam)", () => {
       it("pula Vídeos com Transcrição já ingerida (Segmentos ou ausência marcada)", async () => {
         const ledger = makeLedger();
         makeChannel(ledger);
@@ -1108,7 +1108,7 @@ describe("createIngestion", () => {
           projection: makeProjection(),
         });
 
-        await ingestion.runTranscriptsPhase(CHANNEL_ID);
+        await ingestion._runPhase("transcripts", CHANNEL_ID);
 
         expect(recording.calls).toEqual(["v3"]);
         expect(ledger.listTranscriptSegments(CHANNEL_ID).map((s) => s.videoId).sort()).toEqual(["v1", "v3"]);
@@ -1145,12 +1145,18 @@ describe("createIngestion", () => {
 
         await expect(failingIngestion.runJob(CHANNEL_ID)).rejects.toThrow("cota esgotada");
 
+        // Resume: lê o status das Fases no Ledger antes de retomar
         expect(ledger.getChannel(CHANNEL_ID)).toMatchObject({
           status: "failed",
-          phases: { comments: { status: "failed" } },
+          phases: {
+            videos: { status: "completed" },
+            comments: { status: "failed" },
+            transcripts: { status: "pending" },
+          },
         });
 
         const commentsCalls: string[] = [];
+        const { logger, events } = makeRecordingLogger();
         const okIngestion = createIngestion({
           youtube: makeYouTubeClient(
             [{ videos, nextPageToken: null }],
@@ -1165,6 +1171,7 @@ describe("createIngestion", () => {
           transcripts: makeTranscriptFetcher(),
           ledger,
           projection: makeProjection(),
+          logger,
         });
 
         await okIngestion.runJob(CHANNEL_ID);
@@ -1177,6 +1184,23 @@ describe("createIngestion", () => {
         expect(ledger.listVideos(CHANNEL_ID)).toHaveLength(3);
         expect(commentsCalls).toEqual(["v2", "v1"]);
         expect(ledger.listComments(CHANNEL_ID).map((c) => c.id).sort()).toEqual(["c1", "c2", "c3"]);
+        // Resume guiado pelo Ledger: a Fase de Vídeos para cedo no primeiro
+        // Vídeo conhecido (v3) sem emitir video:processed, a Fase de
+        // Comentários pula v3 já ingerido e processa só v2 e v1, e a Fase
+        // de Transcrições roda à frente.
+        expect(events).toEqual([
+          { event: "phase:started", data: { phase: "videos", channelId: CHANNEL_ID } },
+          { event: "phase:completed", data: { phase: "videos", channelId: CHANNEL_ID, total: 3 } },
+          { event: "phase:started", data: { phase: "comments", channelId: CHANNEL_ID } },
+          { event: "video:processed", data: { phase: "comments", channelId: CHANNEL_ID, videoId: "v2" } },
+          { event: "video:processed", data: { phase: "comments", channelId: CHANNEL_ID, videoId: "v1" } },
+          { event: "phase:completed", data: { phase: "comments", channelId: CHANNEL_ID, total: 3 } },
+          { event: "phase:started", data: { phase: "transcripts", channelId: CHANNEL_ID } },
+          { event: "video:processed", data: { phase: "transcripts", channelId: CHANNEL_ID, videoId: "v3" } },
+          { event: "video:processed", data: { phase: "transcripts", channelId: CHANNEL_ID, videoId: "v2" } },
+          { event: "video:processed", data: { phase: "transcripts", channelId: CHANNEL_ID, videoId: "v1" } },
+          { event: "phase:completed", data: { phase: "transcripts", channelId: CHANNEL_ID, total: 3 } },
+        ]);
       });
 
       it("no resume da Fase de Vídeos, total é a contagem de Vídeos no Ledger (não o done)", async () => {
@@ -1200,13 +1224,20 @@ describe("createIngestion", () => {
         }
         ledger.updatePhase(CHANNEL_ID, "videos", { status: "completed" });
 
-        const ingestion = makeIngestion(
-          makeYouTubeClient(
+        const { logger, events } = makeRecordingLogger();
+        const ingestion = createIngestion({
+          youtube: makeYouTubeClient(
             [{ videos: [video("v3", "Novo", daysAgo(1)), video("v1", "Antigo", daysAgo(200))], nextPageToken: null }],
             { v3: { views: 300, likes: 30, durationSeconds: 300 } },
           ),
+          transcripts: makeTranscriptFetcher(),
           ledger,
-        );
+          projection: makeProjection(),
+          logger,
+        });
+
+        // Resume: lê o status da Fase de Vídeos antes de retomar
+        expect(ledger.getChannel(CHANNEL_ID)?.phases.videos.status).toBe("completed");
 
         await ingestion.runJob(CHANNEL_ID);
 
@@ -1218,6 +1249,86 @@ describe("createIngestion", () => {
           done: 2,
           total: 3,
         });
+        // Resume guiado pelo Ledger: a Fase de Vídeos processa v3 (novo) e
+        // para cedo no v1 (conhecido) sem emitir video:processed nem
+        // re-buscar métricas.
+        const videosEvents = events.filter((e) => e.data.phase === "videos");
+        expect(videosEvents).toEqual([
+          { event: "phase:started", data: { phase: "videos", channelId: CHANNEL_ID } },
+          { event: "video:processed", data: { phase: "videos", channelId: CHANNEL_ID, videoId: "v3" } },
+          { event: "phase:completed", data: { phase: "videos", channelId: CHANNEL_ID, total: 3 } },
+        ]);
+      });
+    });
+
+    describe("runJob em Sincronização (via runJob seam)", () => {
+      it("chama runJob duas vezes: a segunda chamada re-roda só as Fases recentes e emite os eventos correspondentes", async () => {
+        const ledger = makeLedger();
+        makeChannel(ledger);
+        const videos = [
+          video("v1", "Recente", daysAgo(10)),
+          video("v2", "Antigo", daysAgo(365)),
+        ];
+        const stats = {
+          v1: { views: 1, likes: 0, durationSeconds: 10 },
+          v2: { views: 2, likes: 0, durationSeconds: 20 },
+        };
+        const comments = {
+          v1: [{ id: "c1", author: "A", text: "Comentário de v1", likes: 1, publishedAt: daysAgo(5) }],
+          v2: [{ id: "c2", author: "B", text: "Comentário de v2", likes: 2, publishedAt: daysAgo(300) }],
+        };
+        const { logger: firstLogger, events: firstEvents } = makeRecordingLogger();
+        const firstIngestion = createIngestion({
+          youtube: makeYouTubeClient([{ videos, nextPageToken: null }], stats, comments),
+          transcripts: makeTranscriptFetcher(),
+          ledger,
+          projection: makeProjection(),
+          logger: firstLogger,
+        });
+
+        await firstIngestion.runJob(CHANNEL_ID);
+
+        // Após a primeira ingestão, todas as Fases estão completed
+        expect(ledger.getChannel(CHANNEL_ID)?.status).toBe("completed");
+        expect(ledger.getChannel(CHANNEL_ID)?.phases.videos.status).toBe("completed");
+        expect(ledger.getChannel(CHANNEL_ID)?.phases.comments.status).toBe("completed");
+        expect(ledger.getChannel(CHANNEL_ID)?.phases.transcripts.status).toBe("completed");
+
+        // Sincronização: segunda chamada de runJob. A janela de recência
+        // padrão (30 dias) faz só v1 ser re-processado nas Fases de Comentários
+        // e Transcrições; a Fase de Vídeos para cedo no primeiro Vídeo conhecido.
+        const { logger: secondLogger, events: secondEvents } = makeRecordingLogger();
+        const secondIngestion = createIngestion({
+          youtube: makeYouTubeClient([{ videos, nextPageToken: null }], stats, comments),
+          transcripts: makeTranscriptFetcher(),
+          ledger,
+          projection: makeProjection(),
+          logger: secondLogger,
+        });
+
+        await secondIngestion.runJob(CHANNEL_ID);
+
+        expect(ledger.getChannel(CHANNEL_ID)?.status).toBe("completed");
+        // A segunda chamada de runJob emite só os eventos das Fases que
+        // re-rodaram: Vídeos (para cedo no v1 conhecido), Comentários
+        // (re-processa só v1 recente; v2 antigo é pulado sem emitir evento),
+        // Transcrições (re-processa só v1 recente; v2 antigo é pulado).
+        expect(secondEvents).toEqual([
+          { event: "phase:started", data: { phase: "videos", channelId: CHANNEL_ID } },
+          { event: "phase:completed", data: { phase: "videos", channelId: CHANNEL_ID, total: 2 } },
+          { event: "phase:started", data: { phase: "comments", channelId: CHANNEL_ID } },
+          { event: "video:processed", data: { phase: "comments", channelId: CHANNEL_ID, videoId: "v1" } },
+          { event: "phase:completed", data: { phase: "comments", channelId: CHANNEL_ID, total: 2 } },
+          { event: "phase:started", data: { phase: "transcripts", channelId: CHANNEL_ID } },
+          { event: "video:processed", data: { phase: "transcripts", channelId: CHANNEL_ID, videoId: "v1" } },
+          { event: "phase:completed", data: { phase: "transcripts", channelId: CHANNEL_ID, total: 2 } },
+        ]);
+        // Sanity: a primeira ingestão emitiu eventos de processamento de
+        // v1 e v2 (ordem da playlist), que a Sincronização depois pula v2.
+        const firstCommentsVideoIds = firstEvents
+          .filter((e) => e.event === "video:processed" && e.data.phase === "comments")
+          .map((e) => e.data.videoId);
+        expect(firstCommentsVideoIds).toEqual(["v1", "v2"]);
       });
     });
 
@@ -1283,7 +1394,7 @@ describe("createIngestion", () => {
           projection,
         });
 
-        await ingestion.runCommentsPhase(CHANNEL_ID);
+        await ingestion._runPhase("comments", CHANNEL_ID);
 
         // remove é chamado com o (channelId, predicate) que mira Documentos de Comentário do v1
         expect(projection.removeCalls).toHaveLength(1);
@@ -1340,7 +1451,7 @@ describe("createIngestion", () => {
           projection,
         });
 
-        await ingestion.runCommentsPhase(CHANNEL_ID);
+        await ingestion._runPhase("comments", CHANNEL_ID);
 
         // remove é chamado para varrer Documentos de Comentário stale do v1
         expect(projection.removeCalls).toHaveLength(1);
@@ -1389,7 +1500,7 @@ describe("createIngestion", () => {
           projection,
         });
 
-        await ingestion.runCommentsPhase(CHANNEL_ID);
+        await ingestion._runPhase("comments", CHANNEL_ID);
 
         expect(projection.removeCalls).toEqual([]);
         expect(projection.calls).toHaveLength(1);
@@ -1437,7 +1548,7 @@ describe("createIngestion", () => {
           projection,
         });
 
-        await ingestion.runTranscriptsPhase(CHANNEL_ID);
+        await ingestion._runPhase("transcripts", CHANNEL_ID);
 
         // remove é chamado para varrer Segmentos do v1 antes de re-projetar
         expect(projection.removeCalls).toHaveLength(1);
@@ -1482,7 +1593,7 @@ describe("createIngestion", () => {
           projection,
         });
 
-        await ingestion.runTranscriptsPhase(CHANNEL_ID);
+        await ingestion._runPhase("transcripts", CHANNEL_ID);
 
         // sem re-projeção, remove não é chamado e nenhum Documento é projetado
         expect(projection.removeCalls).toEqual([]);
