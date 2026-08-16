@@ -1,4 +1,11 @@
-import type { Projection, SearchDocument } from "./projection.js";
+import {
+  type Documento,
+  FILTERABLE_ATTRIBUTES,
+  type Projection,
+  SEARCHABLE_ATTRIBUTES,
+  SORTABLE_ATTRIBUTES,
+  STOP_WORDS_PT,
+} from "./documento.js";
 import type { SearchParams, SearchPort, SearchResponse } from "./search.js";
 
 export interface MeilisearchConfig {
@@ -6,18 +13,6 @@ export interface MeilisearchConfig {
   masterKey: string;
   fetchImpl?: typeof fetch;
 }
-
-const SEARCHABLE_ATTRIBUTES = ["title", "description", "text", "author"];
-const FILTERABLE_ATTRIBUTES = ["type", "publishedAt"];
-const SORTABLE_ATTRIBUTES = ["publishedAt"];
-const STOP_WORDS_PT = [
-  "a", "as", "o", "os", "e", "em", "de", "da", "do", "das", "dos",
-  "um", "uma", "uns", "umas", "que", "para", "por", "com", "sem",
-  "não", "na", "no", "nas", "nos", "ao", "aos", "se", "mas", "como",
-  "mais", "menos", "muito", "muita", "este", "esta", "isso", "isto",
-  "são", "ser", "foi", "era", "ou", "já", "também", "ainda", "quando",
-  "onde", "depois", "antes", "então", "agora",
-];
 
 interface ErrorBody {
   code?: string;
@@ -117,16 +112,16 @@ export class MeilisearchProjection implements Projection, SearchPort {
       method: "PATCH",
       key: this.masterKey,
       body: {
-        searchableAttributes: SEARCHABLE_ATTRIBUTES,
-        filterableAttributes: FILTERABLE_ATTRIBUTES,
-        sortableAttributes: SORTABLE_ATTRIBUTES,
-        stopWords: STOP_WORDS_PT,
+        searchableAttributes: [...SEARCHABLE_ATTRIBUTES],
+        filterableAttributes: [...FILTERABLE_ATTRIBUTES],
+        sortableAttributes: [...SORTABLE_ATTRIBUTES],
+        stopWords: [...STOP_WORDS_PT],
       },
     });
     this.ensuredIndexes.add(uid);
   }
 
-  async addDocuments(channelId: string, documents: SearchDocument[]): Promise<void> {
+  async addDocuments(channelId: string, documents: Documento[]): Promise<void> {
     if (documents.length === 0) {
       return;
     }
@@ -194,7 +189,7 @@ export class MeilisearchProjection implements Projection, SearchPort {
         body,
       })) as SearchResponseBody;
       return {
-        hits: data.hits as SearchResponse["hits"],
+        hits: data.hits as unknown as SearchResponse["hits"],
         total: data.estimatedTotalHits,
         query: params.q,
       };

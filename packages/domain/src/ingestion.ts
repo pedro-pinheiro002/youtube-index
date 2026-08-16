@@ -1,6 +1,10 @@
+import {
+  type Projection,
+  toCommentDocument,
+  toSegmentDocument,
+  toVideoDocument,
+} from "./documento.js";
 import type { CommentRecord, Ledger, TranscriptSegmentRecord, VideoRecord } from "./ledger.js";
-import type { Projection } from "./projection.js";
-import { toCommentDocument, toSegmentDocument, toVideoDocument } from "./projection.js";
 import type { TranscriptFetcher } from "./transcripts.js";
 import type { PhaseKey, PhaseStatus } from "./types.js";
 import { CommentsDisabledError, type YouTubeClient } from "./youtube.js";

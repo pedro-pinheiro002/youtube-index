@@ -7,7 +7,7 @@ import {
   toVideoDocument,
   videoThumbnail,
   videoUrl,
-} from "../src/projection.js";
+} from "../src/documento.js";
 
 const CHANNEL_ID = "UCY8iijN1AkyDCh1Z9akcqUA";
 

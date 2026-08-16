@@ -6,7 +6,7 @@ import {
   rebuildTranscriptsProjection,
   rebuildVideosProjection,
 } from "../src/rebuild.js";
-import type { SearchDocument } from "../src/projection.js";
+import type { Documento } from "../src/documento.js";
 
 const CHANNEL_ID = "UCY8iijN1AkyDCh1Z9akcqUA";
 
@@ -15,9 +15,9 @@ function makeLedger() {
 }
 
 function makeRecordingProjection() {
-  const calls: Array<{ channelId: string; documents: SearchDocument[] }> = [];
+  const calls: Array<{ channelId: string; documents: Documento[] }> = [];
   return {
-    addDocuments: async (channelId: string, documents: SearchDocument[]) => {
+    addDocuments: async (channelId: string, documents: Documento[]) => {
       calls.push({ channelId, documents });
     },
     calls,

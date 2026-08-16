@@ -25,20 +25,27 @@ export type { IngestionQueue } from "./ingestion-queue.js";
 export { SqliteIngestionQueue } from "./ingestion-queue.js";
 export type {
   CommentSearchDocument,
+  Documento,
   Projection,
-  SearchDocument,
   SearchDocumentType,
   SegmentSearchDocument,
   VideoSearchDocument,
-} from "./projection.js";
+} from "./documento.js";
 export {
+  commentUrl,
   segmentUrl,
   toCommentDocument,
   toSegmentDocument,
   toVideoDocument,
   videoThumbnail,
   videoUrl,
-} from "./projection.js";
+} from "./documento.js";
+export {
+  FILTERABLE_ATTRIBUTES,
+  SEARCHABLE_ATTRIBUTES,
+  SORTABLE_ATTRIBUTES,
+  STOP_WORDS_PT,
+} from "./documento.js";
 export type { SearchHit, SearchParams, SearchPort, SearchResponse, SearchSort } from "./search.js";
 export type { RebuildCommentsDeps, RebuildDeps, RebuildTranscriptsDeps } from "./rebuild.js";
 export {

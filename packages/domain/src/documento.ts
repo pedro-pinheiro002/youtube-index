@@ -1,14 +1,15 @@
 import type { CommentRecord, TranscriptSegmentRecord, VideoRecord } from "./ledger.js";
 
+/**
+ * Os três tipos de Documento que vivem no Índice do Meilisearch,
+ * discriminados pelo campo `type`. Juntas formam a união
+ * {@link Documento}.
+ */
 export type SearchDocumentType = "video" | "comment" | "segment";
 
-export interface SearchDocument {
+export interface VideoSearchDocument {
   id: string;
   channelId: string;
-  type: SearchDocumentType;
-}
-
-export interface VideoSearchDocument extends SearchDocument {
   type: "video";
   title: string;
   description: string;
@@ -20,7 +21,9 @@ export interface VideoSearchDocument extends SearchDocument {
   publishedAt: string;
 }
 
-export interface CommentSearchDocument extends SearchDocument {
+export interface CommentSearchDocument {
+  id: string;
+  channelId: string;
   type: "comment";
   videoId: string;
   videoTitle: string;
@@ -35,7 +38,9 @@ export interface CommentSearchDocument extends SearchDocument {
   publishedAt: string;
 }
 
-export interface SegmentSearchDocument extends SearchDocument {
+export interface SegmentSearchDocument {
+  id: string;
+  channelId: string;
   type: "segment";
   videoId: string;
   videoTitle: string;
@@ -50,9 +55,36 @@ export interface SegmentSearchDocument extends SearchDocument {
   publishedAt: string;
 }
 
+/**
+ * A união discriminada de Documentos que o Índice aceita.
+ * Adicionar uma nova variante aqui é o único lugar que precisa
+ * mudar para o type, o port, os mappers e a UI refletirem a forma.
+ */
+export type Documento = VideoSearchDocument | CommentSearchDocument | SegmentSearchDocument;
+
+/** A porta de Projeção: como o domínio empurra Documentos para um Índice. */
 export interface Projection {
-  addDocuments(channelId: string, documents: SearchDocument[]): Promise<void>;
+  addDocuments(channelId: string, documents: Documento[]): Promise<void>;
 }
+
+/** Atributos indexados para busca full-text no Meilisearch. */
+export const SEARCHABLE_ATTRIBUTES: readonly string[] = ["title", "description", "text", "author"];
+
+/** Atributos aceitos em `filter=` no Meilisearch. */
+export const FILTERABLE_ATTRIBUTES: readonly string[] = ["type", "publishedAt"];
+
+/** Atributos aceitos em `sort=` no Meilisearch. */
+export const SORTABLE_ATTRIBUTES: readonly string[] = ["publishedAt"];
+
+/** Stop words em português compartilhadas por todos os Índices de Canal. */
+export const STOP_WORDS_PT: readonly string[] = [
+  "a", "as", "o", "os", "e", "em", "de", "da", "do", "das", "dos",
+  "um", "uma", "uns", "umas", "que", "para", "por", "com", "sem",
+  "não", "na", "no", "nas", "nos", "ao", "aos", "se", "mas", "como",
+  "mais", "menos", "muito", "muita", "este", "esta", "isso", "isto",
+  "são", "ser", "foi", "era", "ou", "já", "também", "ainda", "quando",
+  "onde", "depois", "antes", "então", "agora",
+];
 
 export function videoUrl(videoId: string): string {
   return `https://www.youtube.com/watch?v=${videoId}`;

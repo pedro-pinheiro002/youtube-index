@@ -1,3 +1,12 @@
+import type {
+  CommentSearchDocument,
+  SearchHit as DomainSearchHit,
+  SearchResponse as DomainSearchResponse,
+  SegmentSearchDocument,
+  VideoSearchDocument,
+  SearchDocumentType,
+} from "@youtube-index/domain";
+
 export type ChannelStatus = "queued" | "ingesting" | "completed" | "failed";
 
 export type PhaseKey = "videos" | "comments" | "transcripts";
@@ -33,63 +42,18 @@ export const PHASE_LABELS: Record<PhaseKey, string> = {
   transcripts: "Transcrições",
 };
 
-export type SearchDocumentType = "video" | "comment" | "segment";
-
+export type { SearchDocumentType } from "@youtube-index/domain";
 export type SearchSort = "relevance" | "publishedAt";
 
 export type TipoFilter = "all" | SearchDocumentType;
 
-export interface SearchHitBase {
-  id: string;
-  channelId: string;
-  _formatted?: Record<string, unknown>;
-}
+export type VideoSearchHit = VideoSearchDocument & { _formatted?: Record<string, unknown> };
+export type CommentSearchHit = CommentSearchDocument & { _formatted?: Record<string, unknown> };
+export type SegmentSearchHit = SegmentSearchDocument & { _formatted?: Record<string, unknown> };
 
-export interface VideoSearchHit extends SearchHitBase {
-  type: "video";
-  title: string;
-  description: string;
-  views: number;
-  likes: number;
-  durationSeconds: number;
-  url: string;
-  thumbnail: string;
-  publishedAt: string;
-}
+export type SearchHit = DomainSearchHit;
 
-export interface VideoContextSearchHit extends SearchHitBase {
-  videoId: string;
-  videoTitle: string;
-  videoUrl: string;
-  videoThumbnail: string;
-  videoViews: number;
-  videoLikes: number;
-  publishedAt: string;
-}
-
-export interface CommentSearchHit extends VideoContextSearchHit {
-  type: "comment";
-  url: string;
-  author: string;
-  text: string;
-  likes: number;
-}
-
-export interface SegmentSearchHit extends VideoContextSearchHit {
-  type: "segment";
-  text: string;
-  start: number;
-  end: number;
-  url: string;
-}
-
-export type SearchHit = VideoSearchHit | CommentSearchHit | SegmentSearchHit;
-
-export interface SearchResponse {
-  hits: SearchHit[];
-  total: number;
-  query: string;
-}
+export interface SearchResponse extends DomainSearchResponse {}
 
 export const SEARCH_TIPO_LABELS: Record<TipoFilter, string> = {
   all: "Todos",

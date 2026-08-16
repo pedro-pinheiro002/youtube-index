@@ -4,9 +4,9 @@ import { SqliteLedger } from "../src/ledger.js";
 import { createIngestion } from "../src/ingestion.js";
 import { CommentsDisabledError, YouTubeApiError } from "../src/youtube.js";
 import type {
+  Documento,
   Ledger,
   Projection,
-  SearchDocument,
   Transcript,
   TranscriptFetcher,
   YouTubeClient,
@@ -59,9 +59,9 @@ function makeProjection(): Projection {
 }
 
 function makeRecordingProjection() {
-  const calls: Array<{ channelId: string; documents: SearchDocument[] }> = [];
+  const calls: Array<{ channelId: string; documents: Documento[] }> = [];
   return {
-    addDocuments: async (channelId: string, documents: SearchDocument[]) => {
+    addDocuments: async (channelId: string, documents: Documento[]) => {
       calls.push({ channelId, documents });
     },
     calls,

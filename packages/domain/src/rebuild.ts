@@ -1,6 +1,11 @@
+import {
+  type Documento,
+  type Projection,
+  toCommentDocument,
+  toSegmentDocument,
+  toVideoDocument,
+} from "./documento.js";
 import type { Ledger } from "./ledger.js";
-import type { Projection, SearchDocument } from "./projection.js";
-import { toCommentDocument, toSegmentDocument, toVideoDocument } from "./projection.js";
 
 export interface RebuildDeps {
   ledger: Pick<Ledger, "listVideos">;
@@ -10,7 +15,7 @@ export interface RebuildDeps {
 async function rebuildProjection<T>(
   channelId: string,
   records: T[],
-  toDocument: (record: T) => SearchDocument,
+  toDocument: (record: T) => Documento,
   projection: Projection,
 ): Promise<number> {
   const documents = records.map(toDocument);
