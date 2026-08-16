@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
+import type { DatabaseSync } from "node:sqlite";
 import {
   createDatabase,
   createIngestion,
+  SqliteIngestionQueue,
   SqliteLedger,
   type Ingestion,
+  type IngestionQueue,
   type Ledger,
   type Projection,
   type TranscriptFetcher,
@@ -13,8 +16,16 @@ import { pollOnce } from "../src/worker.js";
 
 const CHANNEL_ID = "UCY8iijN1AkyDCh1Z9akcqUA";
 
-function makeLedger(): Ledger {
-  return new SqliteLedger(createDatabase(":memory:"));
+function makeDatabase(): DatabaseSync {
+  return createDatabase(":memory:");
+}
+
+function makeLedger(db: DatabaseSync): Ledger {
+  return new SqliteLedger(db);
+}
+
+function makeQueue(db: DatabaseSync): IngestionQueue {
+  return new SqliteIngestionQueue(db);
 }
 
 function makeIngestion(ledger: Ledger): Ingestion {
@@ -43,15 +54,17 @@ function makeChannel(ledger: Ledger): void {
 
 describe("pollOnce", () => {
   it("consome o job da Fila, executa a Fase de Vídeos e completa o job", async () => {
-    const ledger = makeLedger();
+    const db = makeDatabase();
+    const ledger = makeLedger(db);
+    const fila = makeQueue(db);
     makeChannel(ledger);
-    const job = ledger.enqueueJob(CHANNEL_ID);
+    const job = fila.enqueue(CHANNEL_ID);
     const ingestion = makeIngestion(ledger);
 
-    const processed = await pollOnce({ ledger, ingestion });
+    const processed = await pollOnce({ fila, ingestion });
 
     expect(processed).toBe(true);
-    expect(ledger.listJobs(CHANNEL_ID)).toEqual([
+    expect(fila.listJobs(CHANNEL_ID)).toEqual([
       expect.objectContaining({ id: job.id, status: "completed" }),
     ]);
     expect(ledger.getChannel(CHANNEL_ID)).toMatchObject({
@@ -62,9 +75,11 @@ describe("pollOnce", () => {
   });
 
   it("marca o job como failed e relança o erro quando a Ingestão falha", async () => {
-    const ledger = makeLedger();
+    const db = makeDatabase();
+    const ledger = makeLedger(db);
+    const fila = makeQueue(db);
     makeChannel(ledger);
-    const job = ledger.enqueueJob(CHANNEL_ID);
+    const job = fila.enqueue(CHANNEL_ID);
     const failingIngestion: Ingestion = {
       runJob: async () => {
         throw new Error("cota esgotada");
@@ -74,17 +89,19 @@ describe("pollOnce", () => {
       runTranscriptsPhase: async () => {},
     };
 
-    await expect(pollOnce({ ledger, ingestion: failingIngestion })).rejects.toThrow("cota esgotada");
+    await expect(pollOnce({ fila, ingestion: failingIngestion })).rejects.toThrow("cota esgotada");
 
-    expect(ledger.listJobs(CHANNEL_ID)).toEqual([
+    expect(fila.listJobs(CHANNEL_ID)).toEqual([
       expect.objectContaining({ id: job.id, status: "failed" }),
     ]);
   });
 
   it("retorna false quando não há job na Fila", async () => {
-    const ledger = makeLedger();
+    const db = makeDatabase();
+    const ledger = makeLedger(db);
+    const fila = makeQueue(db);
 
-    const processed = await pollOnce({ ledger, ingestion: makeIngestion(ledger) });
+    const processed = await pollOnce({ fila, ingestion: makeIngestion(ledger) });
 
     expect(processed).toBe(false);
   });

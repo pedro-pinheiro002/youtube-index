@@ -1,20 +1,20 @@
-import type { Ingestion, Ledger } from "@youtube-index/domain";
+import type { Ingestion, IngestionQueue } from "@youtube-index/domain";
 
 export interface WorkerDeps {
-  ledger: Ledger;
+  fila: IngestionQueue;
   ingestion: Ingestion;
 }
 
 export async function pollOnce(deps: WorkerDeps): Promise<boolean> {
-  const job = deps.ledger.claimNextJob();
+  const job = deps.fila.claimNext();
   if (!job) {
     return false;
   }
   try {
     await deps.ingestion.runJob(job.channelId);
-    deps.ledger.completeJob(job.id);
+    deps.fila.complete(job.id);
   } catch (err) {
-    deps.ledger.failJob(job.id);
+    deps.fila.fail(job.id);
     const message = err instanceof Error ? err.message : String(err);
     throw new Error(`job ${job.id} do canal ${job.channelId} falhou: ${message}`, { cause: err });
   }

@@ -5,6 +5,7 @@ import {
   createDatabase,
   createIngestion,
   MeilisearchProjection,
+  SqliteIngestionQueue,
   SqliteLedger,
   YouTubeDataApiClient,
   YoutubeTranscriptFetcher,
@@ -22,6 +23,7 @@ async function main(): Promise<void> {
 
   const db = createDatabase(config.dbPath);
   const ledger = new SqliteLedger(db);
+  const fila = new SqliteIngestionQueue(db);
   const youtube = new YouTubeDataApiClient(config.youtubeApiKey);
 
   const transcripts = new YoutubeTranscriptFetcher();
@@ -35,7 +37,7 @@ async function main(): Promise<void> {
 
   const tick = async () => {
     try {
-      const processed = await pollOnce({ ledger, ingestion });
+      const processed = await pollOnce({ fila, ingestion });
       if (processed) {
         logger.info("job processado com sucesso");
       }
