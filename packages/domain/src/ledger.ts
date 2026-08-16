@@ -1,5 +1,5 @@
 import type { DatabaseSync } from "node:sqlite";
-import type { ChannelStatus, ChannelWithPhases, Job, PhaseKey, PhaseProgress, PhaseStatus } from "./types.js";
+import type { ChannelStatus, ChannelWithPhases, PhaseKey, PhaseProgress, PhaseStatus } from "./types.js";
 import { PHASES } from "./types.js";
 
 export interface CreateChannelInput {
@@ -69,11 +69,6 @@ export interface Ledger {
   listTranscriptSegments(channelId: string): TranscriptSegmentRecord[];
   markTranscriptAbsent(videoId: string): void;
   listTranscriptAbsences(channelId: string): string[];
-  enqueueJob(channelId: string): Job;
-  claimNextJob(): Job | null;
-  completeJob(jobId: number): void;
-  failJob(jobId: number): void;
-  listJobs(channelId: string): Job[];
 }
 
 interface ChannelRow {
@@ -388,59 +383,5 @@ export class SqliteLedger implements Ledger {
       )
       .all(channelId) as unknown as Array<{ video_id: string }>;
     return rows.map((row) => row.video_id);
-  }
-
-  enqueueJob(channelId: string): Job {
-    const now = new Date().toISOString();
-    const result = this.db
-      .prepare("INSERT INTO ingestion_jobs (channel_id, status, created_at) VALUES (?, 'queued', ?)")
-      .run(channelId, now);
-    const id = Number(result.lastInsertRowid);
-    return { id, channelId, status: "queued", createdAt: now };
-  }
-
-  claimNextJob(): Job | null {
-    const row = this.db
-      .prepare(
-        "SELECT id, channel_id, status, created_at FROM ingestion_jobs WHERE status = 'queued' ORDER BY id LIMIT 1",
-      )
-      .get() as unknown as
-      | {
-          id: number;
-          channel_id: string;
-          status: Job["status"];
-          created_at: string;
-        }
-      | undefined;
-    if (!row) {
-      return null;
-    }
-    this.db.prepare("UPDATE ingestion_jobs SET status = 'running' WHERE id = ?").run(row.id);
-    return { id: row.id, channelId: row.channel_id, status: "running", createdAt: row.created_at };
-  }
-
-  completeJob(jobId: number): void {
-    this.db.prepare("UPDATE ingestion_jobs SET status = 'completed' WHERE id = ?").run(jobId);
-  }
-
-  failJob(jobId: number): void {
-    this.db.prepare("UPDATE ingestion_jobs SET status = 'failed' WHERE id = ?").run(jobId);
-  }
-
-  listJobs(channelId: string): Job[] {
-    const rows = this.db
-      .prepare("SELECT id, channel_id, status, created_at FROM ingestion_jobs WHERE channel_id = ? ORDER BY id")
-      .all(channelId) as unknown as Array<{
-      id: number;
-      channel_id: string;
-      status: Job["status"];
-      created_at: string;
-    }>;
-    return rows.map((row) => ({
-      id: row.id,
-      channelId: row.channel_id,
-      status: row.status,
-      createdAt: row.created_at,
-    }));
   }
 }
