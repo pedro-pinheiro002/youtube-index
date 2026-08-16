@@ -11,10 +11,16 @@ Aplicativo de busca local para indexar e buscar o conteúdo de um Canal do YouTu
 
 ## Desenvolvimento
 
+O `pnpm dev` roda a `api`, `web` e `worker` no host. A `api` e o `worker` dependem do Meilisearch, que roda via Docker:
+
 ```sh
-pnpm install
+docker compose up -d meilisearch
 pnpm dev
 ```
+
+> O `MEILI_MASTER_KEY` precisa bater com o usado no contêiner do Meilisearch (padrão `youtube-index-dev-master-key`, veja `docker-compose.yml`). O script `dev` já injeta esse padrão automaticamente quando a variável não está definida no ambiente.
+
+> No `pnpm dev` a `api` e o `worker` compartilham o mesmo SQLite em `./data/youtube-index.db` (na raiz do repo). Se `DB_PATH` for relativo no `.env`, o script `dev` o resolve contra a raiz do repo para evitar bancos separados por pacote.
 
 - web: http://localhost:5173
 - api: http://localhost:3000/health

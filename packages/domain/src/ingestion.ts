@@ -5,12 +5,19 @@ import type { TranscriptFetcher } from "./transcripts.js";
 import type { PhaseKey, PhaseStatus } from "./types.js";
 import { CommentsDisabledError, type YouTubeClient } from "./youtube.js";
 
+export interface IngestionLogger {
+  info(message: string): void;
+  warn(message: string): void;
+  error(message: string): void;
+}
+
 export interface IngestionDeps {
   youtube: YouTubeClient;
   transcripts: TranscriptFetcher;
   ledger: Ledger;
   projection: Projection;
   recentWindowDays?: number;
+  logger?: IngestionLogger;
 }
 
 export interface Ingestion {
@@ -22,6 +29,12 @@ export interface Ingestion {
 
 const DEFAULT_RECENT_WINDOW_DAYS = 30;
 
+const NOOP_LOGGER: IngestionLogger = {
+  info() {},
+  warn() {},
+  error() {},
+};
+
 function isRecent(publishedAt: string, windowDays: number): boolean {
   const published = Date.parse(publishedAt);
   if (Number.isNaN(published)) {
@@ -32,6 +45,7 @@ function isRecent(publishedAt: string, windowDays: number): boolean {
 
 export function createIngestion(deps: IngestionDeps): Ingestion {
   const recentWindowDays = deps.recentWindowDays ?? DEFAULT_RECENT_WINDOW_DAYS;
+  const log = deps.logger ?? NOOP_LOGGER;
 
   function phaseStatus(channelId: string, phase: PhaseKey): PhaseStatus {
     return deps.ledger.getChannel(channelId)?.phases[phase].status ?? "pending";
@@ -42,9 +56,11 @@ export function createIngestion(deps: IngestionDeps): Ingestion {
     const canStopEarly = priorStatus === "completed";
     const uploadsPlaylistId = await deps.youtube.getUploadsPlaylistId(channelId);
     deps.ledger.updatePhase(channelId, "videos", { status: "running" });
+    log.info(`[${channelId}] fase videos: listando vídeos da playlist ${uploadsPlaylistId}...`);
 
     let pageToken: string | null = null;
     let done = 0;
+    let added = 0;
     const records: VideoRecord[] = [];
     do {
       const page = await deps.youtube.listUploads(uploadsPlaylistId, pageToken);
@@ -72,6 +88,9 @@ export function createIngestion(deps: IngestionDeps): Ingestion {
             };
             deps.ledger.upsertVideo(record);
             records.push(record);
+            added += 1;
+          } else {
+            log.warn(`[${channelId}] vídeo ${video.id} sem métricas (removido/indisponível); pulado`);
           }
         }
         done += 1;
@@ -82,15 +101,18 @@ export function createIngestion(deps: IngestionDeps): Ingestion {
 
     await deps.projection.addDocuments(channelId, records.map(toVideoDocument));
     deps.ledger.updatePhase(channelId, "videos", { status: "completed", total: done });
+    log.info(`[${channelId}] fase videos concluída: ${done} vídeos (${added} novos)`);
   }
 
   async function runCommentsPhase(channelId: string): Promise<void> {
     const priorStatus = phaseStatus(channelId, "comments");
     const isSync = priorStatus === "completed";
     const videos = deps.ledger.listVideos(channelId);
-    deps.ledger.updatePhase(channelId, "comments", { status: "running" });
+    deps.ledger.updatePhase(channelId, "comments", { status: "running", total: videos.length });
+    log.info(`[${channelId}] fase comments: buscando comentários de ${videos.length} vídeos...`);
 
     let done = 0;
+    let added = 0;
     const records: CommentRecord[] = [];
     for (const video of videos) {
       if (isSync) {
@@ -124,6 +146,7 @@ export function createIngestion(deps: IngestionDeps): Ingestion {
             };
             deps.ledger.upsertComment(record);
             records.push(record);
+            added += 1;
           }
         }
       } catch (err) {
@@ -137,14 +160,17 @@ export function createIngestion(deps: IngestionDeps): Ingestion {
     }
 
     await deps.projection.addDocuments(channelId, records.map(toCommentDocument));
-    deps.ledger.updatePhase(channelId, "comments", { status: "completed", total: done });
+    deps.ledger.updatePhase(channelId, "comments", { status: "completed", total: videos.length });
+    log.info(`[${channelId}] fase comments concluída: ${done}/${videos.length} vídeos (${added} comentários)`);
   }
 
   async function runTranscriptsPhase(channelId: string): Promise<void> {
     const videos = deps.ledger.listVideos(channelId);
-    deps.ledger.updatePhase(channelId, "transcripts", { status: "running" });
+    deps.ledger.updatePhase(channelId, "transcripts", { status: "running", total: videos.length });
+    log.info(`[${channelId}] fase transcripts: buscando transcrições de ${videos.length} vídeos...`);
 
     let done = 0;
+    let added = 0;
     const records: TranscriptSegmentRecord[] = [];
     for (const video of videos) {
       if (deps.ledger.hasTranscriptIngestion(video.id)) {
@@ -168,6 +194,7 @@ export function createIngestion(deps: IngestionDeps): Ingestion {
           };
           deps.ledger.upsertTranscriptSegment(record);
           records.push(record);
+          added += 1;
         }
       } else {
         deps.ledger.markTranscriptAbsent(video.id);
@@ -177,11 +204,15 @@ export function createIngestion(deps: IngestionDeps): Ingestion {
     }
 
     await deps.projection.addDocuments(channelId, records.map(toSegmentDocument));
-    deps.ledger.updatePhase(channelId, "transcripts", { status: "completed", total: done });
+    deps.ledger.updatePhase(channelId, "transcripts", { status: "completed", total: videos.length });
+    log.info(`[${channelId}] fase transcripts concluída: ${done}/${videos.length} vídeos (${added} segmentos)`);
   }
 
   async function runJob(channelId: string): Promise<void> {
+    const title = deps.ledger.getChannel(channelId)?.title ?? channelId;
     deps.ledger.setChannelStatus(channelId, "ingesting");
+    deps.ledger.clearChannelError(channelId);
+    log.info(`[${channelId}] ingestão iniciada: "${title}"`);
     let currentPhase: PhaseKey = "videos";
     try {
       await runVideosPhase(channelId);
@@ -190,11 +221,15 @@ export function createIngestion(deps: IngestionDeps): Ingestion {
       currentPhase = "transcripts";
       await runTranscriptsPhase(channelId);
     } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
       deps.ledger.setChannelStatus(channelId, "failed");
       deps.ledger.updatePhase(channelId, currentPhase, { status: "failed" });
+      deps.ledger.setChannelError(channelId, message);
+      log.error(`[${channelId}] fase "${currentPhase}" falhou: ${message}`);
       throw err;
     }
     deps.ledger.setChannelStatus(channelId, "completed");
+    log.info(`[${channelId}] ingestão concluída`);
   }
 
   return { runJob, runVideosPhase, runCommentsPhase, runTranscriptsPhase };

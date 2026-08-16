@@ -3,9 +3,10 @@ services:
     image: getmeili/meilisearch:v1.53.1
     environment:
       # Master key fica apenas nos contêineres de servidor, nunca no browser.
-      # A porta 7700 não é publicada: a api é a única porta de acesso ao Meilisearch.
       MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:-youtube-index-dev-master-key}
       MEILI_ENV: production
+    ports:
+      - "7700:7700"
     volumes:
       - meili_data:/meili_data
     healthcheck:

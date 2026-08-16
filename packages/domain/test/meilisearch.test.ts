@@ -74,17 +74,19 @@ describe("MeilisearchProjection", () => {
       await client.addDocuments(CHANNEL_ID, [videoDocument("v1")]);
 
       expect(calls.map((c) => [c.method, c.url])).toEqual([
-        ["PUT", `${URL}/indexes/${INDEX_UID}`],
+        ["GET", `${URL}/indexes/${INDEX_UID}`],
+        ["PATCH", `${URL}/indexes/${INDEX_UID}`],
         ["PATCH", `${URL}/indexes/${INDEX_UID}/settings`],
         ["POST", `${URL}/indexes/${INDEX_UID}/documents`],
       ]);
       expect(calls[0]?.authorization).toBe(`Bearer ${MASTER_KEY}`);
-      expect(calls[1]?.body).toMatchObject({
+      expect(calls[1]?.body).toEqual({ primaryKey: "id" });
+      expect(calls[2]?.body).toMatchObject({
         searchableAttributes: expect.arrayContaining(["title", "description", "text", "author"]),
         filterableAttributes: expect.arrayContaining(["type", "publishedAt"]),
         sortableAttributes: ["publishedAt"],
       });
-      expect(calls[2]?.body).toEqual([expect.objectContaining({ id: "v1", type: "video" })]);
+      expect(calls[3]?.body).toEqual([expect.objectContaining({ id: "v1", type: "video" })]);
     });
 
     it("não reconfigura o índice já criado na mesma sessão", async () => {
@@ -98,6 +100,33 @@ describe("MeilisearchProjection", () => {
       const documentsCalls = calls.filter((c) => c.url.endsWith("/documents"));
       expect(settingsCalls).toHaveLength(1);
       expect(documentsCalls).toHaveLength(2);
+    });
+
+    it("cria o índice via POST /indexes quando ele ainda não existe", async () => {
+      const calls: Array<{ method: string; url: string; body?: unknown }> = [];
+      const fetchImpl: typeof fetch = async (input, init) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+        calls.push({ method, url, body: init?.body === undefined ? undefined : JSON.parse(String(init?.body)) });
+        if (url.endsWith(`/indexes/${INDEX_UID}`) && method === "GET") {
+          return new Response(JSON.stringify({ message: "Index not found", code: "index_not_found" }), {
+            status: 404,
+            headers: { "content-type": "application/json" },
+          });
+        }
+        return new Response(JSON.stringify({}), { status: 200, headers: { "content-type": "application/json" } });
+      };
+      const client = makeClient(fetchImpl);
+
+      await client.addDocuments(CHANNEL_ID, [videoDocument("v1")]);
+
+      expect(calls.map((c) => [c.method, c.url])).toEqual([
+        ["GET", `${URL}/indexes/${INDEX_UID}`],
+        ["POST", `${URL}/indexes`],
+        ["PATCH", `${URL}/indexes/${INDEX_UID}/settings`],
+        ["POST", `${URL}/indexes/${INDEX_UID}/documents`],
+      ]);
+      expect(calls[1]?.body).toEqual({ uid: INDEX_UID, primaryKey: "id" });
     });
 
     it("ignora addDocuments com lista vazia", async () => {

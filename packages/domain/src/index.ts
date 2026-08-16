@@ -19,7 +19,7 @@ export type {
 } from "./ledger.js";
 export { SqliteLedger } from "./ledger.js";
 export { applySchema, createDatabase, openDatabase, SCHEMA } from "./schema.js";
-export type { Ingestion, IngestionDeps } from "./ingestion.js";
+export type { Ingestion, IngestionDeps, IngestionLogger } from "./ingestion.js";
 export { createIngestion } from "./ingestion.js";
 export type {
   CommentSearchDocument,

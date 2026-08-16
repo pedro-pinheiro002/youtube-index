@@ -11,6 +11,7 @@ export interface Channel {
   handle: string;
   title: string;
   status: ChannelStatus;
+  lastError: string | null;
   createdAt: string;
 }
 

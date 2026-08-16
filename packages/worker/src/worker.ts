@@ -15,7 +15,8 @@ export async function pollOnce(deps: WorkerDeps): Promise<boolean> {
     deps.ledger.completeJob(job.id);
   } catch (err) {
     deps.ledger.failJob(job.id);
-    throw err;
+    const message = err instanceof Error ? err.message : String(err);
+    throw new Error(`job ${job.id} do canal ${job.channelId} falhou: ${message}`, { cause: err });
   }
   return true;
 }

@@ -51,6 +51,8 @@ export interface Ledger {
   createChannel(input: CreateChannelInput): ChannelWithPhases;
   getChannel(channelId: string): ChannelWithPhases | null;
   setChannelStatus(channelId: string, status: ChannelStatus): void;
+  setChannelError(channelId: string, message: string): void;
+  clearChannelError(channelId: string): void;
   updatePhase(channelId: string, phase: PhaseKey, update: Partial<Pick<PhaseProgress, "status" | "done" | "total">>): void;
   upsertVideo(video: VideoRecord): void;
   hasVideo(videoId: string): boolean;
@@ -79,6 +81,7 @@ interface ChannelRow {
   handle: string;
   title: string;
   status: ChannelWithPhases["status"];
+  last_error: string | null;
   created_at: string;
 }
 
@@ -105,8 +108,8 @@ export class SqliteLedger implements Ledger {
     const now = new Date().toISOString();
     this.db
       .prepare(
-        "INSERT INTO channels (id, handle, title, status, created_at) VALUES (?, ?, ?, 'queued', ?) " +
-          "ON CONFLICT(id) DO UPDATE SET handle = excluded.handle, title = excluded.title, status = 'queued'",
+        "INSERT INTO channels (id, handle, title, status, last_error, created_at) VALUES (?, ?, ?, 'queued', NULL, ?) " +
+          "ON CONFLICT(id) DO UPDATE SET handle = excluded.handle, title = excluded.title, status = 'queued', last_error = NULL",
       )
       .run(input.channelId, input.handle, input.title, now);
 
@@ -127,7 +130,7 @@ export class SqliteLedger implements Ledger {
 
   getChannel(channelId: string): ChannelWithPhases | null {
     const row = this.db
-      .prepare("SELECT id, handle, title, status, created_at FROM channels WHERE id = ?")
+      .prepare("SELECT id, handle, title, status, last_error, created_at FROM channels WHERE id = ?")
       .get(channelId) as unknown as ChannelRow | undefined;
     if (!row) {
       return null;
@@ -153,6 +156,7 @@ export class SqliteLedger implements Ledger {
       handle: row.handle,
       title: row.title,
       status: row.status,
+      lastError: row.last_error,
       createdAt: row.created_at,
       phases,
     };
@@ -160,6 +164,14 @@ export class SqliteLedger implements Ledger {
 
   setChannelStatus(channelId: string, status: ChannelStatus): void {
     this.db.prepare("UPDATE channels SET status = ? WHERE id = ?").run(status, channelId);
+  }
+
+  setChannelError(channelId: string, message: string): void {
+    this.db.prepare("UPDATE channels SET last_error = ? WHERE id = ?").run(message, channelId);
+  }
+
+  clearChannelError(channelId: string): void {
+    this.db.prepare("UPDATE channels SET last_error = NULL WHERE id = ?").run(channelId);
   }
 
   updatePhase(channelId: string, phase: PhaseKey, update: Partial<Pick<PhaseProgress, "status" | "done" | "total">>): void {

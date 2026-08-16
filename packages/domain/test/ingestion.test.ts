@@ -677,6 +677,7 @@ describe("createIngestion", () => {
       const channel = ledger.getChannel(CHANNEL_ID);
       expect(channel?.status).toBe("failed");
       expect(channel?.phases.videos.status).toBe("failed");
+      expect(channel?.lastError).toBe("cota esgotada");
     });
   });
 

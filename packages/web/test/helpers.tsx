@@ -14,6 +14,7 @@ export function makeChannel(status: ChannelWithPhases["status"]): ChannelWithPha
     handle: "@funkyblackcat",
     title: "Funky Black Cat",
     status,
+    lastError: null,
     createdAt: "2026-01-01T00:00:00.000Z",
     phases: {
       videos: { phase: "videos", status: "pending", done: 0, total: null },

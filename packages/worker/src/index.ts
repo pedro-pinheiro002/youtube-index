@@ -8,7 +8,14 @@ import {
   SqliteLedger,
   YouTubeDataApiClient,
   YoutubeTranscriptFetcher,
+  type IngestionLogger,
 } from "@youtube-index/domain";
+
+const logger: IngestionLogger = {
+  info: (message) => console.log(`[worker] ${message}`),
+  warn: (message) => console.warn(`[worker] ${message}`),
+  error: (message) => console.error(`[worker] ${message}`),
+};
 
 async function main(): Promise<void> {
   const config = loadConfig();
@@ -19,7 +26,7 @@ async function main(): Promise<void> {
 
   const transcripts = new YoutubeTranscriptFetcher();
   const projection = new MeilisearchProjection({ url: config.meiliUrl, masterKey: config.meiliMasterKey });
-  const ingestion = createIngestion({ youtube, transcripts, ledger, projection });
+  const ingestion = createIngestion({ youtube, transcripts, ledger, projection, logger });
 
   const healthServer = createHealthServer();
   await new Promise<void>((resolve) => healthServer.listen(config.healthPort, resolve));
@@ -28,9 +35,12 @@ async function main(): Promise<void> {
 
   const tick = async () => {
     try {
-      await pollOnce({ ledger, ingestion });
+      const processed = await pollOnce({ ledger, ingestion });
+      if (processed) {
+        logger.info("job processado com sucesso");
+      }
     } catch (err) {
-      console.error("[worker] erro ao processar job:", err);
+      logger.error(err instanceof Error ? err.message : String(err));
     }
   };
   const timer = setInterval(tick, config.pollIntervalMs);

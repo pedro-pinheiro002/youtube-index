@@ -73,6 +73,53 @@ describe("SqliteLedger", () => {
     });
   });
 
+  describe("setChannelError / clearChannelError", () => {
+    it("grava o motivo da falha e o devolve via getChannel", () => {
+      const ledger = makeLedger();
+      ledger.createChannel({
+        channelId: CHANNEL_ID,
+        handle: "@funkyblackcat",
+        title: "Funky Black Cat",
+      });
+
+      ledger.setChannelError(CHANNEL_ID, "cota esgotada");
+
+      expect(ledger.getChannel(CHANNEL_ID)?.lastError).toBe("cota esgotada");
+    });
+
+    it("clearChannelError volta lastError para null", () => {
+      const ledger = makeLedger();
+      ledger.createChannel({
+        channelId: CHANNEL_ID,
+        handle: "@funkyblackcat",
+        title: "Funky Black Cat",
+      });
+      ledger.setChannelError(CHANNEL_ID, "cota esgotada");
+
+      ledger.clearChannelError(CHANNEL_ID);
+
+      expect(ledger.getChannel(CHANNEL_ID)?.lastError).toBeNull();
+    });
+
+    it("criar o Canal de novo zera o lastError", () => {
+      const ledger = makeLedger();
+      ledger.createChannel({
+        channelId: CHANNEL_ID,
+        handle: "@funkyblackcat",
+        title: "Funky Black Cat",
+      });
+      ledger.setChannelError(CHANNEL_ID, "cota esgotada");
+
+      ledger.createChannel({
+        channelId: CHANNEL_ID,
+        handle: "@funkyblackcat",
+        title: "Funky Black Cat",
+      });
+
+      expect(ledger.getChannel(CHANNEL_ID)?.lastError).toBeNull();
+    });
+  });
+
   describe("enqueueJob", () => {
     it("enfileira um job de Ingestão na Fila com status queued", () => {
       const ledger = makeLedger();

@@ -94,7 +94,25 @@ export class MeilisearchProjection implements Projection, SearchPort {
     if (this.ensuredIndexes.has(uid)) {
       return;
     }
-    await this.request(`/indexes/${uid}`, { method: "PUT", key: this.masterKey });
+    let index: { primaryKey?: string | null } | undefined;
+    try {
+      index = (await this.request(`/indexes/${uid}`, { method: "GET", key: this.masterKey })) as {
+        primaryKey?: string | null;
+      };
+    } catch (err) {
+      if (err instanceof MeilisearchError && err.status === 404) {
+        await this.request("/indexes", {
+          method: "POST",
+          key: this.masterKey,
+          body: { uid, primaryKey: "id" },
+        });
+      } else {
+        throw err;
+      }
+    }
+    if (index && index.primaryKey !== "id") {
+      await this.request(`/indexes/${uid}`, { method: "PATCH", key: this.masterKey, body: { primaryKey: "id" } });
+    }
     await this.request(`/indexes/${uid}/settings`, {
       method: "PATCH",
       key: this.masterKey,

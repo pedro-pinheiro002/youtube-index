@@ -23,9 +23,11 @@ export function registerChannelRoutes(app: FastifyInstance, deps: ChannelRoutesD
       resolution = await deps.youtube.resolveHandle(handle);
     } catch (err) {
       if (err instanceof ChannelNotFoundError) {
+        request.log.warn({ handle }, "handle não resolvido na YouTube API");
         return reply.code(404).send({ error: `Canal não encontrado para handle '${handle}'` });
       }
       if (err instanceof YouTubeApiError) {
+        request.log.error({ handle, err }, "falha ao consultar a YouTube API");
         return reply.code(502).send({ error: "Falha ao consultar a YouTube API" });
       }
       throw err;
@@ -36,7 +38,11 @@ export function registerChannelRoutes(app: FastifyInstance, deps: ChannelRoutesD
       handle,
       title: resolution.title,
     });
-    deps.ledger.enqueueJob(channel.id);
+    const job = deps.ledger.enqueueJob(channel.id);
+    request.log.info(
+      { handle, channelId: channel.id, jobId: job.id, title: channel.title },
+      "canal criado e job de ingestão enfileirado",
+    );
 
     return reply.code(201).send(channel);
   });

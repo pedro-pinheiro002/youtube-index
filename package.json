@@ -7,7 +7,7 @@
     "node": ">=22"
   },
   "scripts": {
-    "dev": "pnpm --filter @youtube-index/domain build && pnpm -r --parallel run dev",
+    "dev": "set -a && [ -f .env ] && . ./.env; set +a && DB_PATH=$(case \"$DB_PATH\" in /*) printf '%s' \"$DB_PATH\";; '') printf '%s' \"$PWD/data/youtube-index.db\";; *) printf '%s' \"$PWD/$DB_PATH\";; esac) && MEILI_MASTER_KEY=${MEILI_MASTER_KEY:-youtube-index-dev-master-key} DB_PATH=\"$DB_PATH\" pnpm --filter @youtube-index/domain build && MEILI_MASTER_KEY=${MEILI_MASTER_KEY:-youtube-index-dev-master-key} DB_PATH=\"$DB_PATH\" pnpm -r --parallel run dev",
     "build": "pnpm -r run build",
     "typecheck": "pnpm -r run typecheck",
     "test": "pnpm -r run test",

@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS channels (
   handle TEXT NOT NULL,
   title TEXT NOT NULL,
   status TEXT NOT NULL,
+  last_error TEXT,
   created_at TEXT NOT NULL
 );
 
@@ -73,11 +74,18 @@ CREATE TABLE IF NOT EXISTS ingestion_jobs (
 `;
 
 export function openDatabase(path: string): DatabaseSync {
-  return new DatabaseSync(path);
+  const db = new DatabaseSync(path);
+  db.exec("PRAGMA journal_mode = WAL");
+  db.exec("PRAGMA busy_timeout = 5000");
+  return db;
 }
 
 export function applySchema(db: DatabaseSync): void {
   db.exec(SCHEMA);
+  const columns = db.prepare("PRAGMA table_info(channels)").all() as Array<{ name: string }>;
+  if (!columns.some((column) => column.name === "last_error")) {
+    db.exec("ALTER TABLE channels ADD COLUMN last_error TEXT");
+  }
 }
 
 export function createDatabase(path: string): DatabaseSync {

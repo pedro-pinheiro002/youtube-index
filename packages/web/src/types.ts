@@ -16,6 +16,7 @@ export interface ChannelWithPhases {
   handle: string;
   title: string;
   status: ChannelStatus;
+  lastError: string | null;
   createdAt: string;
   phases: Record<PhaseKey, PhaseProgress>;
 }
