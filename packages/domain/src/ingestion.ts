@@ -15,6 +15,7 @@ export interface IngestionLogger {
   info(message: string): void;
   warn(message: string): void;
   error(message: string): void;
+  event(event: string, data: Record<string, unknown>): void;
 }
 
 export interface IngestionDeps {
@@ -39,6 +40,7 @@ const NOOP_LOGGER: IngestionLogger = {
   info() {},
   warn() {},
   error() {},
+  event() {},
 };
 
 function isRecent(publishedAt: string, windowDays: number): boolean {
@@ -62,6 +64,7 @@ export function createIngestion(deps: IngestionDeps): Ingestion {
     const canStopEarly = priorStatus === "completed";
     const uploadsPlaylistId = await deps.youtube.getUploadsPlaylistId(channelId);
     deps.ledger.updatePhase(channelId, "videos", { status: "running" });
+    log.event("phase:started", { phase: "videos", channelId });
     log.info(`[${channelId}] fase videos: listando vídeos da playlist ${uploadsPlaylistId}...`);
 
     let pageToken: string | null = null;
@@ -97,16 +100,20 @@ export function createIngestion(deps: IngestionDeps): Ingestion {
             added += 1;
           } else {
             log.warn(`[${channelId}] vídeo ${video.id} sem métricas (removido/indisponível); pulado`);
+            log.event("video:skipped", { phase: "videos", channelId, videoId: video.id, reason: "no-metrics" });
           }
         }
         done += 1;
         deps.ledger.updatePhase(channelId, "videos", { done });
+        log.event("video:processed", { phase: "videos", channelId, videoId: video.id });
       }
       pageToken = stop ? null : page.nextPageToken;
     } while (pageToken);
 
     await deps.projection.addDocuments(channelId, records.map(toVideoDocument));
-    deps.ledger.updatePhase(channelId, "videos", { status: "completed", total: deps.ledger.listVideos(channelId).length });
+const total = deps.ledger.listVideos(channelId).length;
+    deps.ledger.updatePhase(channelId, "videos", { status: "completed", total });
+    log.event("phase:completed", { phase: "videos", channelId, total });
     log.info(`[${channelId}] fase videos concluída: ${done} vídeos (${added} novos)`);
   }
 
@@ -115,6 +122,7 @@ export function createIngestion(deps: IngestionDeps): Ingestion {
     const isSync = priorStatus === "completed";
     const videos = deps.ledger.listVideos(channelId);
     deps.ledger.updatePhase(channelId, "comments", { status: "running", total: videos.length });
+    log.event("phase:started", { phase: "comments", channelId });
     log.info(`[${channelId}] fase comments: buscando comentários de ${videos.length} vídeos...`);
 
     let done = 0;
@@ -174,10 +182,12 @@ export function createIngestion(deps: IngestionDeps): Ingestion {
       }
       done += 1;
       deps.ledger.updatePhase(channelId, "comments", { done });
+      log.event("video:processed", { phase: "comments", channelId, videoId: video.id });
     }
 
     await deps.projection.addDocuments(channelId, documents);
     deps.ledger.updatePhase(channelId, "comments", { status: "completed", total: videos.length });
+    log.event("phase:completed", { phase: "comments", channelId, total: videos.length });
     log.info(`[${channelId}] fase comments concluída: ${done}/${videos.length} vídeos (${added} comentários)`);
   }
 
@@ -186,6 +196,7 @@ export function createIngestion(deps: IngestionDeps): Ingestion {
     const isSync = priorStatus === "completed";
     const videos = deps.ledger.listVideos(channelId);
     deps.ledger.updatePhase(channelId, "transcripts", { status: "running", total: videos.length });
+    log.event("phase:started", { phase: "transcripts", channelId });
     log.info(`[${channelId}] fase transcripts: buscando transcrições de ${videos.length} vídeos...`);
 
     let done = 0;
@@ -237,10 +248,12 @@ export function createIngestion(deps: IngestionDeps): Ingestion {
       }
       done += 1;
       deps.ledger.updatePhase(channelId, "transcripts", { done });
+      log.event("video:processed", { phase: "transcripts", channelId, videoId: video.id });
     }
 
     await deps.projection.addDocuments(channelId, documents);
     deps.ledger.updatePhase(channelId, "transcripts", { status: "completed", total: videos.length });
+    log.event("phase:completed", { phase: "transcripts", channelId, total: videos.length });
     log.info(`[${channelId}] fase transcripts concluída: ${done}/${videos.length} vídeos (${added} segmentos)`);
   }
 

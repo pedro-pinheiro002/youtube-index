@@ -16,6 +16,7 @@ const logger: IngestionLogger = {
   info: (message) => console.log(`[worker] ${message}`),
   warn: (message) => console.warn(`[worker] ${message}`),
   error: (message) => console.error(`[worker] ${message}`),
+  event: (event, data) => console.log(`[worker] ${event}: ${JSON.stringify(data)}`),
 };
 
 async function main(): Promise<void> {
