@@ -29,6 +29,14 @@ export interface IngestionDeps {
 
 export interface Ingestion {
   runJob(channelId: string): Promise<void>;
+  /**
+   * Private test seam — NOT part of the public interface. The leading `_`
+   * signals that this method exists only so the module's own tests can drive
+   * a single Fase in isolation (per the codebase-design principle: internal
+   * seams stay testable while the public interface stays narrow). Production
+   * callers use `runJob`.
+   */
+  _runPhase(phase: PhaseKey, channelId: string): Promise<void>;
   runVideosPhase(channelId: string): Promise<void>;
   runCommentsPhase(channelId: string): Promise<void>;
   runTranscriptsPhase(channelId: string): Promise<void>;
@@ -281,5 +289,16 @@ export function createIngestion(deps: IngestionDeps): Ingestion {
     log.info(`[${channelId}] ingestão concluída`);
   }
 
-  return { runJob, runVideosPhase, runCommentsPhase, runTranscriptsPhase };
+  async function _runPhase(phase: PhaseKey, channelId: string): Promise<void> {
+    switch (phase) {
+      case "videos":
+        return runVideosPhase(channelId);
+      case "comments":
+        return runCommentsPhase(channelId);
+      case "transcripts":
+        return runTranscriptsPhase(channelId);
+    }
+  }
+
+  return { runJob, _runPhase, runVideosPhase, runCommentsPhase, runTranscriptsPhase };
 }
