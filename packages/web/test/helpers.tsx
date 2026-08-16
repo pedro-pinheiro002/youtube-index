@@ -1,12 +1,10 @@
-import type {
-  ChannelWithPhases,
-  CommentSearchHit,
-  SearchResponse,
-  SegmentSearchHit,
-  VideoSearchHit,
-} from "../src/types";
+import type { ChannelWithPhases, SearchHit, SearchResponse } from "../src/types";
 import type { ChannelApi } from "../src/useChannel";
 import type { SearchApi } from "../src/useSearch";
+
+type VideoSearchHit = Extract<SearchHit, { type: "video" }>;
+type CommentSearchHit = Extract<SearchHit, { type: "comment" }>;
+type SegmentSearchHit = Extract<SearchHit, { type: "segment" }>;
 
 export function makeChannel(status: ChannelWithPhases["status"]): ChannelWithPhases {
   return {
