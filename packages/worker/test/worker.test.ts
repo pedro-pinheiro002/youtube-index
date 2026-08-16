@@ -88,10 +88,6 @@ describe("pollOnce", () => {
       runJob: async () => {
         throw new Error("cota esgotada");
       },
-      _runPhase: async () => {},
-      runVideosPhase: async () => {},
-      runCommentsPhase: async () => {},
-      runTranscriptsPhase: async () => {},
     };
 
     await expect(pollOnce({ fila, ingestion: failingIngestion })).rejects.toThrow("cota esgotada");

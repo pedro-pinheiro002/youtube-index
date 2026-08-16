@@ -29,17 +29,6 @@ export interface IngestionDeps {
 
 export interface Ingestion {
   runJob(channelId: string): Promise<void>;
-  /**
-   * Private test seam — NOT part of the public interface. The leading `_`
-   * signals that this method exists only so the module's own tests can drive
-   * a single Fase in isolation (per the codebase-design principle: internal
-   * seams stay testable while the public interface stays narrow). Production
-   * callers use `runJob`.
-   */
-  _runPhase(phase: PhaseKey, channelId: string): Promise<void>;
-  runVideosPhase(channelId: string): Promise<void>;
-  runCommentsPhase(channelId: string): Promise<void>;
-  runTranscriptsPhase(channelId: string): Promise<void>;
 }
 
 const DEFAULT_RECENT_WINDOW_DAYS = 30;
@@ -51,6 +40,15 @@ const NOOP_LOGGER: IngestionLogger = {
   event() {},
 };
 
+/**
+ * Returns `true` when `publishedAt` falls inside the recent window (sync mode
+ * re-processes only recent Vídeos for Comentários/Transcrições).
+ *
+ * Seam contract: an empty/unparseable `publishedAt` returns `false`, so a
+ * Vídeo without a parseable timestamp is skipped in sync mode (never treated
+ * as recent). This matches the Vídeo record shape, where `publishedAt` is a
+ * string sourced from YouTube and is expected to be an ISO 8601 timestamp.
+ */
 function isRecent(publishedAt: string, windowDays: number): boolean {
   const published = Date.parse(publishedAt);
   if (Number.isNaN(published)) {
@@ -59,7 +57,7 @@ function isRecent(publishedAt: string, windowDays: number): boolean {
   return published >= Date.now() - windowDays * 86_400_000;
 }
 
-export function createIngestion(deps: IngestionDeps): Ingestion {
+export function createIngestion(deps: IngestionDeps) {
   const recentWindowDays = deps.recentWindowDays ?? DEFAULT_RECENT_WINDOW_DAYS;
   const log = deps.logger ?? NOOP_LOGGER;
 
@@ -272,6 +270,11 @@ export function createIngestion(deps: IngestionDeps): Ingestion {
     log.info(`[${channelId}] ingestão iniciada: "${title}"`);
     let currentPhase: PhaseKey = "videos";
     try {
+      // The Ingestion sequence is a fixed await chain: Vídeos → Comentários →
+      // Transcrições. Each Fase is a private function inside this module; the
+      // public interface exposes only `runJob`. (If the Phase registry from
+      // #20 lands, this body becomes `for (const phase of PHASES) await
+      // _runPhase(phase, channelId)` — the order then lives in the registry.)
       await runVideosPhase(channelId);
       currentPhase = "comments";
       await runCommentsPhase(channelId);
@@ -289,6 +292,15 @@ export function createIngestion(deps: IngestionDeps): Ingestion {
     log.info(`[${channelId}] ingestão concluída`);
   }
 
+  /**
+   * Private test seam — NOT part of the public `Ingestion` interface. The
+   * leading `_` signals that this method exists only so the module's own
+   * tests can drive a single Fase in isolation (per the codebase-design
+   * principle: internal seams stay testable while the public interface stays
+   * narrow). Production callers use `runJob`. It is returned from
+   * `createIngestion` (so tests reach it via the inferred return type) but is
+   * absent from the exported `Ingestion` type.
+   */
   async function _runPhase(phase: PhaseKey, channelId: string): Promise<void> {
     switch (phase) {
       case "videos":
@@ -300,5 +312,5 @@ export function createIngestion(deps: IngestionDeps): Ingestion {
     }
   }
 
-  return { runJob, _runPhase, runVideosPhase, runCommentsPhase, runTranscriptsPhase };
+  return { runJob, _runPhase };
 }
