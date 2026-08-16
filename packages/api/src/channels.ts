@@ -2,12 +2,14 @@ import type { FastifyInstance } from "fastify";
 import {
   ChannelNotFoundError,
   YouTubeApiError,
+  type IngestionQueue,
   type Ledger,
   type YouTubeClient,
 } from "@youtube-index/domain";
 
 export interface ChannelRoutesDeps {
   ledger: Ledger;
+  fila: IngestionQueue;
   youtube: YouTubeClient;
 }
 
@@ -38,7 +40,7 @@ export function registerChannelRoutes(app: FastifyInstance, deps: ChannelRoutesD
       handle,
       title: resolution.title,
     });
-    const job = deps.ledger.enqueueJob(channel.id);
+    const job = deps.fila.enqueue(channel.id);
     request.log.info(
       { handle, channelId: channel.id, jobId: job.id, title: channel.title },
       "canal criado e job de ingestão enfileirado",
