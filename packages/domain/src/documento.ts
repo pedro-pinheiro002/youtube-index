@@ -65,6 +65,14 @@ export type Documento = VideoSearchDocument | CommentSearchDocument | SegmentSea
 /** A porta de Projeção: como o domínio empurra Documentos para um Índice. */
 export interface Projection {
   addDocuments(channelId: string, documents: Documento[]): Promise<void>;
+  /**
+   * Remove do Índice do Canal todos os Documentos que casam com o `predicate`.
+   * Usado para varrer Documentos órfão durante a Sincronização (ex.: Vídeo
+   * antigo que saiu do top-50 e teve seus Comentários apagados do Ledger).
+   */
+  remove(channelId: string, predicate: (doc: Documento) => boolean): Promise<void>;
+  /** Esvazia o Índice do Canal — usado em re-ingestão a partir do zero. */
+  clear(channelId: string): Promise<void>;
 }
 
 /** Atributos indexados para busca full-text no Meilisearch. */

@@ -44,7 +44,11 @@ function makeIngestion(ledger: Ledger): Ingestion {
     listComments: async () => [],
   };
   const transcripts: TranscriptFetcher = { fetchTranscript: async () => null };
-  const projection: Projection = { addDocuments: async () => {} };
+  const projection: Projection = {
+    addDocuments: async () => {},
+    remove: async () => {},
+    clear: async () => {},
+  };
   return createIngestion({ youtube, transcripts, ledger, projection });
 }
 

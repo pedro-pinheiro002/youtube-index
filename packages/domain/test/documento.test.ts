@@ -7,6 +7,8 @@ import {
   toVideoDocument,
   videoThumbnail,
   videoUrl,
+  type Documento,
+  type Projection,
 } from "../src/documento.js";
 
 const CHANNEL_ID = "UCY8iijN1AkyDCh1Z9akcqUA";
@@ -123,3 +125,71 @@ describe("toSegmentDocument", () => {
     expect(segmentUrl("abc123", 142)).toBe("https://www.youtube.com/watch?v=abc123&t=142s");
   });
 });
+
+describe("Projection port", () => {
+  const CHANNEL_ID = "UCY8iijN1AkyDCh1Z9akcqUA";
+
+  function makeFakeProjection() {
+    const added: Array<{ channelId: string; documents: Documento[] }> = [];
+    const removed: Array<{ channelId: string; predicate: (doc: Documento) => boolean }> = [];
+    const cleared: string[] = [];
+    const projection: Projection = {
+      addDocuments: async (channelId, documents) => {
+        added.push({ channelId, documents });
+      },
+      remove: async (channelId, predicate) => {
+        removed.push({ channelId, predicate });
+      },
+      clear: async (channelId) => {
+        cleared.push(channelId);
+      },
+    };
+    return { projection, added, removed, cleared };
+  }
+
+  it("aceita addDocuments via o port", async () => {
+    const fake = makeFakeProjection();
+    await fake.projection.addDocuments(CHANNEL_ID, [videoDocument("v1", "Primeiro vídeo")]);
+    expect(fake.added).toEqual([{ channelId: CHANNEL_ID, documents: [videoDocument("v1", "Primeiro vídeo")] }]);
+  });
+
+  it("recebe o channelId e o predicate em remove", async () => {
+    const fake = makeFakeProjection();
+    const predicate = (doc: Documento) => doc.type === "comment";
+    await fake.projection.remove(CHANNEL_ID, predicate);
+    expect(fake.removed).toEqual([{ channelId: CHANNEL_ID, predicate }]);
+  });
+
+  it("recebe o channelId em clear", async () => {
+    const fake = makeFakeProjection();
+    await fake.projection.clear(CHANNEL_ID);
+    expect(fake.cleared).toEqual([CHANNEL_ID]);
+  });
+
+  it("o predicate em remove é aplicável aos três tipos de Documento", async () => {
+    const fake = makeFakeProjection();
+    const observed: Array<Documento["type"]> = [];
+    await fake.projection.remove(CHANNEL_ID, (doc) => {
+      observed.push(doc.type);
+      return false;
+    });
+    expect(observed).toEqual([]);
+    expect(fake.removed).toHaveLength(1);
+  });
+});
+
+function videoDocument(id: string, title = `Vídeo ${id}`) {
+  return {
+    id,
+    channelId: "UCY8iijN1AkyDCh1Z9akcqUA",
+    type: "video" as const,
+    title,
+    description: "Uma descrição",
+    views: 100,
+    likes: 10,
+    durationSeconds: 120,
+    url: `https://www.youtube.com/watch?v=${id}`,
+    thumbnail: `https://i.ytimg.com/vi/${id}/hqdefault.jpg`,
+    publishedAt: "2023-01-01T00:00:00Z",
+  };
+}

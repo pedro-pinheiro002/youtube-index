@@ -52,7 +52,7 @@ export class MeilisearchProjection implements Projection, SearchPort {
   private restrictedKey: string | null = null;
   private readonly ensuredIndexes = new Set<string>();
 
-  constructor(config: MeilisearchConfig) {
+  private constructor(config: MeilisearchConfig) {
     this.url = config.url.replace(/\/+$/, "");
     this.masterKey = config.masterKey;
     this.fetchImpl = config.fetchImpl ?? fetch;
@@ -133,7 +133,58 @@ export class MeilisearchProjection implements Projection, SearchPort {
     });
   }
 
+  async remove(channelId: string, predicate: (doc: Documento) => boolean): Promise<void> {
+    const uid = this.indexUid(channelId);
+    const idsToDelete: string[] = [];
+    let offset = 0;
+    const pageSize = 1000;
+    while (true) {
+      const page = (await this.request(`/indexes/${uid}/search`, {
+        method: "POST",
+        key: this.masterKey,
+        body: {
+          q: "",
+          limit: pageSize,
+          offset,
+          attributesToRetrieve: ["id"],
+        },
+      })) as { hits: Array<Record<string, unknown>> };
+      for (const hit of page.hits) {
+        const id = hit.id;
+        if (typeof id !== "string") {
+          continue;
+        }
+        const doc = hit as unknown as Documento;
+        if (predicate(doc)) {
+          idsToDelete.push(id);
+        }
+      }
+      if (page.hits.length < pageSize) {
+        break;
+      }
+      offset += pageSize;
+    }
+    if (idsToDelete.length === 0) {
+      return;
+    }
+    await this.request(`/indexes/${uid}/documents/delete-batch`, {
+      method: "POST",
+      key: this.masterKey,
+      body: idsToDelete,
+    });
+  }
+
+  async clear(channelId: string): Promise<void> {
+    await this.request(`/indexes/${this.indexUid(channelId)}/documents`, {
+      method: "DELETE",
+      key: this.masterKey,
+    });
+  }
+
   async getOrCreateRestrictedSearchKey(description = "youtube-index search"): Promise<string> {
+    if (this.restrictedKey) {
+      return this.restrictedKey;
+    }
     const existing = (await this.request("/keys", {
       method: "GET",
       key: this.masterKey,
@@ -200,10 +251,20 @@ export class MeilisearchProjection implements Projection, SearchPort {
       throw err;
     }
   }
+
+  /**
+   * Único ponto de entrada para o adapter: o construtor é privado e só
+   * esta fábrica (ou o helper de módulo abaixo) consegue instanciar.
+   * Garante que a chave restrita de busca sempre seja provisionada antes
+   * de qualquer chamada real ao Meilisearch.
+   */
+  static async create(config: MeilisearchConfig): Promise<MeilisearchProjection> {
+    const projection = new MeilisearchProjection(config);
+    await projection.getOrCreateRestrictedSearchKey();
+    return projection;
+  }
 }
 
 export async function createMeilisearchProjection(config: MeilisearchConfig): Promise<MeilisearchProjection> {
-  const projection = new MeilisearchProjection(config);
-  await projection.getOrCreateRestrictedSearchKey();
-  return projection;
+  return MeilisearchProjection.create(config);
 }

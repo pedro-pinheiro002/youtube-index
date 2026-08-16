@@ -20,6 +20,8 @@ function makeRecordingProjection() {
     addDocuments: async (channelId: string, documents: Documento[]) => {
       calls.push({ channelId, documents });
     },
+    remove: async () => {},
+    clear: async () => {},
     calls,
   };
 }
