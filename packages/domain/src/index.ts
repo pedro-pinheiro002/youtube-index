@@ -28,6 +28,7 @@ export type {
   CommentSearchDocument,
   Documento,
   Projection,
+  ProjectionHit,
   SearchDocumentType,
   SegmentSearchDocument,
   VideoSearchDocument,

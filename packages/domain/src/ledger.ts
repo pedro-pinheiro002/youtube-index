@@ -72,6 +72,13 @@ export interface Ledger {
   listTranscriptSegments(channelId: string): TranscriptSegmentRecord[];
   markTranscriptAbsent(videoId: string): void;
   listTranscriptAbsences(channelId: string): string[];
+  /**
+   * Apaga todos os Segmentos de Transcrição do Vídeo no Ledger. Usado
+   * quando a Transcrição mudou e o Worker precisa re-projetar os
+   * Segmentos do zero — sem isso, Segmentos stale permaneceriam no
+   * Ledger (e, depois de re-projetar, no Índice).
+   */
+  deleteTranscriptSegmentsForVideo(videoId: string): void;
 }
 
 interface ChannelRow {
@@ -378,6 +385,10 @@ export class SqliteLedger implements Ledger {
     this.db
       .prepare("INSERT INTO transcript_absences (video_id, created_at) VALUES (?, ?) ON CONFLICT(video_id) DO NOTHING")
       .run(videoId, now);
+  }
+
+  deleteTranscriptSegmentsForVideo(videoId: string): void {
+    this.db.prepare("DELETE FROM transcript_segments WHERE video_id = ?").run(videoId);
   }
 
   listTranscriptAbsences(channelId: string): string[] {

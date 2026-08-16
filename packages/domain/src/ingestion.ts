@@ -132,7 +132,17 @@ export function createIngestion(deps: IngestionDeps): Ingestion {
       }
       try {
         const comments = await deps.youtube.listComments(video.id);
+        // Na Sincronização, o conjunto de Comentários pode ter mudado de duas
+        // formas: (a) o top-50 mudou (alguns saíram, outros entraram) ou
+        // (b) o Vídeo antes tinha Comentários e agora não tem mais. Em ambos
+        // os casos varr os Documentos stale do Vídeo no Índice antes de
+        // re-projetar — sem isso, o Índice mantém Documentos de Comentários
+        // que já saíram e voltariam a aparecer em Buscas.
+        if (isSync && (comments.length === 0 || deps.ledger.hasCommentIngestion(video.id))) {
+          await deps.projection.remove(channelId, (hit) => hit.type === "comment" && hit.videoId === video.id);
+        }
         if (comments.length === 0) {
+          deps.ledger.deleteCommentsForVideo(video.id);
           deps.ledger.markCommentAbsence(video.id, "none");
         } else {
           deps.ledger.deleteCommentsForVideo(video.id);
@@ -172,6 +182,8 @@ export function createIngestion(deps: IngestionDeps): Ingestion {
   }
 
   async function runTranscriptsPhase(channelId: string): Promise<void> {
+    const priorStatus = phaseStatus(channelId, "transcripts");
+    const isSync = priorStatus === "completed";
     const videos = deps.ledger.listVideos(channelId);
     deps.ledger.updatePhase(channelId, "transcripts", { status: "running", total: videos.length });
     log.info(`[${channelId}] fase transcripts: buscando transcrições de ${videos.length} vídeos...`);
@@ -180,11 +192,28 @@ export function createIngestion(deps: IngestionDeps): Ingestion {
     let added = 0;
     const documents: SegmentSearchDocument[] = [];
     for (const video of videos) {
-      if (deps.ledger.hasTranscriptIngestion(video.id)) {
+      if (isSync) {
+        // Na Sincronização, só re-processamos Vídeos recentes para apanhar
+        // mudanças nas Transcrições (Correções automáticas do YouTube, por
+        // exemplo). Vídeos antigos ficam como estão — o custo de reprocessar
+        // todos a cada Sincronização não se justifica.
+        if (!isRecent(video.publishedAt, recentWindowDays)) {
+          done += 1;
+          continue;
+        }
+      } else if (deps.ledger.hasTranscriptIngestion(video.id)) {
         done += 1;
         continue;
       }
       const transcript = await deps.transcripts.fetchTranscript(video.id);
+      // Em Sincronização, Segmentos antigos do Vídeo podem ter ficado stale
+      // no Índice — a Transcrição pode ter sido corrigida (segmentos
+      // diferentes) ou removida. Varre antes de qualquer mudança para não
+      // misturar Segmentos novos com antigos em Buscas.
+      if (isSync && deps.ledger.hasTranscriptIngestion(video.id)) {
+        await deps.projection.remove(channelId, (hit) => hit.type === "segment" && hit.videoId === video.id);
+      }
+      deps.ledger.deleteTranscriptSegmentsForVideo(video.id);
       if (transcript) {
         const context = deps.ledger.videoContext(video.id);
         if (!context) {
