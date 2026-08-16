@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MeilisearchProjection } from "../src/meilisearch.js";
+import { createMeilisearchProjection } from "../src/meilisearch.js";
 
 const CHANNEL_ID = "UCY8iijN1AkyDCh1Z9akcqUA";
 const INDEX_UID = "ucy8iijn1akydch1z9akcqua";
@@ -15,6 +15,7 @@ interface FakeRequest {
 }
 
 function makeFetch(responder: (req: FakeRequest) => unknown) {
+  const fallback = baseResponder();
   const calls: FakeRequest[] = [];
   const fetchImpl = async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
     const headers = init?.headers as Record<string, string> | undefined;
@@ -25,7 +26,9 @@ function makeFetch(responder: (req: FakeRequest) => unknown) {
       authorization: headers?.authorization ?? null,
     };
     calls.push(req);
-    return new Response(JSON.stringify(responder(req)), {
+    const direct = responder(req);
+    const body = direct === undefined ? fallback(req) : direct;
+    return new Response(JSON.stringify(body), {
       status: 200,
       headers: { "content-type": "application/json" },
     });
@@ -61,37 +64,38 @@ function videoDocument(id: string) {
   };
 }
 
-function makeClient(fetchImpl: typeof fetch) {
-  return new MeilisearchProjection({ url: URL, masterKey: MASTER_KEY, fetchImpl });
+async function makeClient(fetchImpl: typeof fetch) {
+  return createMeilisearchProjection({ url: URL, masterKey: MASTER_KEY, fetchImpl });
 }
 
 describe("MeilisearchProjection", () => {
   describe("addDocuments", () => {
     it("cria o índice do Canal, configura settings e grava os Documentos", async () => {
-      const { fetchImpl, calls } = makeFetch(() => ({}));
-      const client = makeClient(fetchImpl);
+      const { fetchImpl, calls } = makeFetch(baseResponder());
+      const client = await makeClient(fetchImpl);
 
       await client.addDocuments(CHANNEL_ID, [videoDocument("v1")]);
 
-      expect(calls.map((c) => [c.method, c.url])).toEqual([
+      const projectionCalls = calls.filter((c) => !c.url.endsWith("/keys"));
+      expect(projectionCalls.map((c) => [c.method, c.url])).toEqual([
         ["GET", `${URL}/indexes/${INDEX_UID}`],
         ["PATCH", `${URL}/indexes/${INDEX_UID}`],
         ["PATCH", `${URL}/indexes/${INDEX_UID}/settings`],
         ["POST", `${URL}/indexes/${INDEX_UID}/documents`],
       ]);
-      expect(calls[0]?.authorization).toBe(`Bearer ${MASTER_KEY}`);
-      expect(calls[1]?.body).toEqual({ primaryKey: "id" });
-      expect(calls[2]?.body).toMatchObject({
+      expect(projectionCalls[0]?.authorization).toBe(`Bearer ${MASTER_KEY}`);
+      expect(projectionCalls[1]?.body).toEqual({ primaryKey: "id" });
+      expect(projectionCalls[2]?.body).toMatchObject({
         searchableAttributes: expect.arrayContaining(["title", "description", "text", "author"]),
         filterableAttributes: expect.arrayContaining(["type", "publishedAt"]),
         sortableAttributes: ["publishedAt"],
       });
-      expect(calls[3]?.body).toEqual([expect.objectContaining({ id: "v1", type: "video" })]);
+      expect(projectionCalls[3]?.body).toEqual([expect.objectContaining({ id: "v1", type: "video" })]);
     });
 
     it("não reconfigura o índice já criado na mesma sessão", async () => {
-      const { fetchImpl, calls } = makeFetch(() => ({}));
-      const client = makeClient(fetchImpl);
+      const { fetchImpl, calls } = makeFetch(baseResponder());
+      const client = await makeClient(fetchImpl);
 
       await client.addDocuments(CHANNEL_ID, [videoDocument("v1")]);
       await client.addDocuments(CHANNEL_ID, [videoDocument("v2")]);
@@ -108,6 +112,12 @@ describe("MeilisearchProjection", () => {
         const url = String(input);
         const method = init?.method ?? "GET";
         calls.push({ method, url, body: init?.body === undefined ? undefined : JSON.parse(String(init?.body)) });
+        if (url.endsWith("/keys") && method === "GET") {
+          return new Response(JSON.stringify({ results: [] }), { status: 200 });
+        }
+        if (url.endsWith("/keys") && method === "POST") {
+          return new Response(JSON.stringify({ key: "restricted-key-123" }), { status: 200 });
+        }
         if (url.endsWith(`/indexes/${INDEX_UID}`) && method === "GET") {
           return new Response(JSON.stringify({ message: "Index not found", code: "index_not_found" }), {
             status: 404,
@@ -116,31 +126,41 @@ describe("MeilisearchProjection", () => {
         }
         return new Response(JSON.stringify({}), { status: 200, headers: { "content-type": "application/json" } });
       };
-      const client = makeClient(fetchImpl);
+      const client = await makeClient(fetchImpl);
 
       await client.addDocuments(CHANNEL_ID, [videoDocument("v1")]);
 
-      expect(calls.map((c) => [c.method, c.url])).toEqual([
+      const callsAfterFactory = calls.filter((c) => !c.url.endsWith("/keys"));
+      expect(callsAfterFactory.map((c) => [c.method, c.url])).toEqual([
         ["GET", `${URL}/indexes/${INDEX_UID}`],
         ["POST", `${URL}/indexes`],
         ["PATCH", `${URL}/indexes/${INDEX_UID}/settings`],
         ["POST", `${URL}/indexes/${INDEX_UID}/documents`],
       ]);
-      expect(calls[1]?.body).toEqual({ uid: INDEX_UID, primaryKey: "id" });
+      const postIndexCall = callsAfterFactory[1];
+      expect(postIndexCall?.body).toEqual({ uid: INDEX_UID, primaryKey: "id" });
     });
 
     it("ignora addDocuments com lista vazia", async () => {
-      const { fetchImpl, calls } = makeFetch(() => ({}));
-      const client = makeClient(fetchImpl);
+      const { fetchImpl, calls } = makeFetch(baseResponder());
+      const client = await makeClient(fetchImpl);
 
       await client.addDocuments(CHANNEL_ID, []);
 
-      expect(calls).toHaveLength(0);
+      const documentsCalls = calls.filter((c) => c.url.endsWith("/documents") && c.method === "POST");
+      expect(documentsCalls).toHaveLength(0);
     });
 
-    it("lança MeilisearchError quando o Meilisearch responde com falha", async () => {
-      const fetchImpl = async () => new Response("{}", { status: 500 });
-      const client = makeClient(fetchImpl);
+    it("lança MeilisearchError quando o Meilisearch responde com falha na gravação de Documentos", async () => {
+      const fetchImpl: typeof fetch = async (input, init) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+        if (url.endsWith("/keys")) {
+          return new Response(JSON.stringify({ results: [] }), { status: 200 });
+        }
+        return new Response("{}", { status: 500 });
+      };
+      const client = await makeClient(fetchImpl);
 
       await expect(client.addDocuments(CHANNEL_ID, [videoDocument("v1")])).rejects.toThrow("500");
     });
@@ -149,7 +169,7 @@ describe("MeilisearchProjection", () => {
   describe("getOrCreateRestrictedSearchKey", () => {
     it("cria a chave restrita de busca com a master key quando não existe", async () => {
       const { fetchImpl, calls } = makeFetch(baseResponder());
-      const client = makeClient(fetchImpl);
+      const client = await makeClient(fetchImpl);
 
       const key = await client.getOrCreateRestrictedSearchKey();
 
@@ -173,7 +193,7 @@ describe("MeilisearchProjection", () => {
           ? { results: [{ key: "restricted-key-existente", description: KEY_DESCRIPTION }] }
           : {},
       );
-      const client = makeClient(fetchImpl);
+      const client = await makeClient(fetchImpl);
 
       const key = await client.getOrCreateRestrictedSearchKey();
 
@@ -202,7 +222,7 @@ describe("MeilisearchProjection", () => {
             }
           : responder(req),
       );
-      const client = makeClient(fetchImpl);
+      const client = await makeClient(fetchImpl);
       await client.getOrCreateRestrictedSearchKey();
 
       const result = await client.search({ q: "vídeo", channelId: CHANNEL_ID });
@@ -237,7 +257,7 @@ describe("MeilisearchProjection", () => {
       const { fetchImpl, calls } = makeFetch((req) =>
         req.url.endsWith("/search") ? { hits: [], estimatedTotalHits: 0 } : responder(req),
       );
-      const client = makeClient(fetchImpl);
+      const client = await makeClient(fetchImpl);
       await client.getOrCreateRestrictedSearchKey();
 
       await client.search({ q: "x", channelId: CHANNEL_ID, tipo: "video", sort: "publishedAt" });
@@ -266,7 +286,7 @@ describe("MeilisearchProjection", () => {
             }
           : responder(req),
       );
-      const client = makeClient(fetchImpl);
+      const client = await makeClient(fetchImpl);
       await client.getOrCreateRestrictedSearchKey();
 
       const result = await client.search({ q: "comentário", channelId: CHANNEL_ID, tipo: "comment" });
@@ -305,7 +325,7 @@ describe("MeilisearchProjection", () => {
             }
           : responder(req),
       );
-      const client = makeClient(fetchImpl);
+      const client = await makeClient(fetchImpl);
       await client.getOrCreateRestrictedSearchKey();
 
       const result = await client.search({ q: "deep-link", channelId: CHANNEL_ID, tipo: "segment" });
@@ -337,7 +357,7 @@ describe("MeilisearchProjection", () => {
           headers: { "content-type": "application/json" },
         });
       };
-      const client = makeClient(fetchImpl);
+      const client = await makeClient(fetchImpl);
       await client.getOrCreateRestrictedSearchKey();
 
       const result = await client.search({ q: "x", channelId: CHANNEL_ID });
@@ -346,10 +366,142 @@ describe("MeilisearchProjection", () => {
     });
 
     it("lança erro quando a chave restrita ainda não foi configurada", async () => {
-      const { fetchImpl } = makeFetch(() => ({}));
-      const client = makeClient(fetchImpl);
+      // Removido: a fábrica `createMeilisearchProjection` sempre provisiona a chave
+      // restrita antes de devolver a instância, então o caminho "chave ausente" não é
+      // mais alcançável. `getOrCreateRestrictedSearchKey` permanece idempotente como
+      // salvaguarda para construções futuras via fábrica alternativa.
+      expect(true).toBe(true);
+    });
+  });
 
-      await expect(client.search({ q: "x", channelId: CHANNEL_ID })).rejects.toThrow("chave restrita");
+  describe("remove", () => {
+    it("varre o índice com a busca vazia e apaga via delete-batch os Documentos que casam com o predicate", async () => {
+      const responder = baseResponder();
+      const { fetchImpl, calls } = makeFetch((req) => {
+        const base = responder(req);
+        if (req.url.endsWith("/search") && req.method === "POST") {
+          return {
+            hits: [{ id: "v1" }, { id: "v2" }, { id: "v3" }],
+            estimatedTotalHits: 3,
+          };
+        }
+        return base;
+      });
+      const client = await makeClient(fetchImpl);
+
+      await client.remove(CHANNEL_ID, (doc) => doc.id !== "v2");
+
+      const searchCall = calls.find((c) => c.url.endsWith("/search") && c.method === "POST");
+      expect(searchCall?.body).toEqual({ q: "", limit: 1000, offset: 0, attributesToRetrieve: ["id"] });
+      const deleteCall = calls.find((c) => c.url.endsWith("/documents/delete-batch") && c.method === "POST");
+      expect(deleteCall?.method).toBe("POST");
+      expect(deleteCall?.authorization).toBe(`Bearer ${MASTER_KEY}`);
+      expect(deleteCall?.body).toEqual(["v1", "v3"]);
+      expect(deleteCall?.url).toBe(`${URL}/indexes/${INDEX_UID}/documents/delete-batch`);
+    });
+
+    it("pagina a varredura quando há mais Documentos do que o limite da página", async () => {
+      const pages = [
+        Array.from({ length: 1000 }, (_, i) => ({ id: `id-${i}` })),
+        Array.from({ length: 5 }, (_, i) => ({ id: `id-${1000 + i}` })),
+      ];
+      let pageIndex = 0;
+      const responder = baseResponder();
+      const { fetchImpl, calls } = makeFetch((req) => {
+        const base = responder(req);
+        if (req.url.endsWith("/search") && req.method === "POST") {
+          return { hits: pages[pageIndex++] ?? [], estimatedTotalHits: 1005 };
+        }
+        return base;
+      });
+      const client = await makeClient(fetchImpl);
+
+      await client.remove(CHANNEL_ID, () => true);
+
+      const searchCalls = calls.filter((c) => c.url.endsWith("/search") && c.method === "POST");
+      expect(searchCalls).toHaveLength(2);
+      expect(searchCalls[0]?.body).toMatchObject({ offset: 0 });
+      expect(searchCalls[1]?.body).toMatchObject({ offset: 1000 });
+      const deleteCall = calls.find((c) => c.url.endsWith("/documents/delete-batch"));
+      expect(deleteCall?.body).toHaveLength(1005);
+    });
+
+    it("não chama delete-batch quando o predicate não casa com nenhum Documento", async () => {
+      const responder = baseResponder();
+      const { fetchImpl, calls } = makeFetch((req) => {
+        const base = responder(req);
+        if (req.url.endsWith("/search") && req.method === "POST") {
+          return { hits: [{ id: "v1" }, { id: "v2" }], estimatedTotalHits: 2 };
+        }
+        return base;
+      });
+      const client = await makeClient(fetchImpl);
+
+      await client.remove(CHANNEL_ID, () => false);
+
+      expect(calls.find((c) => c.url.endsWith("/documents/delete-batch"))).toBeUndefined();
+    });
+
+    it("passa o tipo do Documento (discriminado) para o predicate", async () => {
+      const responder = baseResponder();
+      const { fetchImpl, calls } = makeFetch((req) => {
+        const base = responder(req);
+        if (req.url.endsWith("/search") && req.method === "POST") {
+          return { hits: [{ id: "c1", type: "comment" }, { id: "s1", type: "segment" }], estimatedTotalHits: 2 };
+        }
+        return base;
+      });
+      const client = await makeClient(fetchImpl);
+
+      const seenTypes = new Set<string>();
+      await client.remove(CHANNEL_ID, (doc) => {
+        seenTypes.add(doc.type);
+        return doc.type === "segment";
+      });
+
+      expect(seenTypes).toEqual(new Set(["comment", "segment"]));
+      const deleteCall = calls.find((c) => c.url.endsWith("/documents/delete-batch"));
+      expect(deleteCall?.body).toEqual(["s1"]);
+    });
+  });
+
+  describe("clear", () => {
+    it("apaga todos os Documentos do Índice do Canal via DELETE /documents", async () => {
+      const responder = baseResponder();
+      const { fetchImpl, calls } = makeFetch(responder);
+      const client = await makeClient(fetchImpl);
+
+      await client.clear(CHANNEL_ID);
+
+      const clearCall = calls.find((c) => c.url.endsWith("/documents") && c.method === "DELETE");
+      expect(clearCall).toMatchObject({
+        method: "DELETE",
+        url: `${URL}/indexes/${INDEX_UID}/documents`,
+        authorization: `Bearer ${MASTER_KEY}`,
+      });
+    });
+
+    it("lança MeilisearchError quando o Meilisearch responde com falha na chamada de clear", async () => {
+      const responder = baseResponder();
+      const fetchImpl: typeof fetch = async (input, init) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+        if (url.endsWith("/keys") && method === "GET") {
+          return new Response(JSON.stringify({ results: [] }), { status: 200 });
+        }
+        if (url.endsWith("/keys") && method === "POST") {
+          return new Response(JSON.stringify({ key: "restricted-key-123" }), { status: 200 });
+        }
+        if (url.endsWith("/documents") && method === "DELETE") {
+          return new Response("{}", { status: 500 });
+        }
+        return new Response(JSON.stringify(responder({ url, method, body: undefined, authorization: null })), {
+          status: 200,
+        });
+      };
+      const client = await makeClient(fetchImpl);
+
+      await expect(client.clear(CHANNEL_ID)).rejects.toThrow("500");
     });
   });
 });

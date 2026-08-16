@@ -55,7 +55,7 @@ function makeRecordingTranscriptFetcher(transcripts: Record<string, Transcript |
 }
 
 function makeProjection(): Projection {
-  return { addDocuments: async () => {} };
+  return { addDocuments: async () => {}, remove: async () => {}, clear: async () => {} };
 }
 
 function makeRecordingProjection() {
@@ -64,6 +64,8 @@ function makeRecordingProjection() {
     addDocuments: async (channelId: string, documents: Documento[]) => {
       calls.push({ channelId, documents });
     },
+    remove: async () => {},
+    clear: async () => {},
     calls,
   };
 }
