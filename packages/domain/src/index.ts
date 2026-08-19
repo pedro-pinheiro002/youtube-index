@@ -57,7 +57,7 @@ export {
 } from "./rebuild.js";
 export type { MeilisearchConfig } from "./meilisearch.js";
 export { createMeilisearchProjection, MeilisearchError, MeilisearchProjection } from "./meilisearch.js";
-export type { Transcript, TranscriptFetcher, TranscriptSegment } from "./transcripts.js";
+export type { Transcript, TranscriptFetcher, TranscriptResult, TranscriptSegment } from "./transcripts.js";
 export { YoutubeTranscriptFetcher } from "./transcripts.js";
 export type {
   ChannelResolution,

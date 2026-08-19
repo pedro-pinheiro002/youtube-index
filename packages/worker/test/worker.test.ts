@@ -43,7 +43,7 @@ function makeIngestion(ledger: Ledger): Ingestion {
       videoId === "v1" ? { views: 100, likes: 10, durationSeconds: 120 } : { views: 200, likes: 20, durationSeconds: 240 },
     listComments: async () => [],
   };
-  const transcripts: TranscriptFetcher = { fetchTranscript: async () => null };
+  const transcripts: TranscriptFetcher = { fetchTranscript: async () => ({ kind: "absent" }) };
   const projection: Projection = {
     addDocuments: async () => {},
     remove: async () => {},

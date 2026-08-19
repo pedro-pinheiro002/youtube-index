@@ -15,7 +15,7 @@ import {
 const logger: IngestionLogger = {
   info: (message) => console.log(`[worker] ${message}`),
   warn: (message) => console.warn(`[worker] ${message}`),
-  error: (message) => console.error(`[worker] ${message}`),
+  error: (message, cause) => console.error(`[worker] ${message}`, cause),
   event: (event, data) => console.log(`[worker] ${event}: ${JSON.stringify(data)}`),
 };
 
@@ -46,7 +46,7 @@ async function main(): Promise<void> {
         logger.info("job processado com sucesso");
       }
     } catch (err) {
-      logger.error(err instanceof Error ? err.message : String(err));
+      logger.error(err instanceof Error ? err.message : String(err), err instanceof Error ? err : undefined);
     }
   };
   const timer = setInterval(tick, config.pollIntervalMs);

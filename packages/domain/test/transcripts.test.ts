@@ -11,17 +11,17 @@ function makeClient(response: {
   };
 }
 
-function makeClientThrowing(): { ready: Promise<void>; getTranscript: () => Promise<never> } {
+function makeClientThrowing(cause: Error): { ready: Promise<void>; getTranscript: () => Promise<never> } {
   return {
     ready: Promise.resolve(),
     getTranscript: async () => {
-      throw new Error("vídeo exige autenticação extra");
+      throw cause;
     },
   };
 }
 
 describe("YoutubeTranscriptFetcher", () => {
-  it("converte a resposta do serviço não-oficial em Segmentos com start/duration numéricos", async () => {
+  it('devolve { kind: "transcript" } com os Segmentos quando o serviço responde com track não-vazia', async () => {
     const fetcher = new YoutubeTranscriptFetcher(
       makeClient({
         id: "v1",
@@ -37,40 +37,49 @@ describe("YoutubeTranscriptFetcher", () => {
       }),
     );
 
-    const transcript = await fetcher.fetchTranscript("v1");
+    const result = await fetcher.fetchTranscript("v1");
 
-    expect(transcript).toEqual({
-      videoId: "v1",
-      segments: [
-        { start: 0, duration: 10.2, text: "primeiro trecho" },
-        { start: 142.5, duration: 8, text: "trecho com deep-link" },
-      ],
+    expect(result).toEqual({
+      kind: "transcript",
+      transcript: {
+        videoId: "v1",
+        segments: [
+          { start: 0, duration: 10.2, text: "primeiro trecho" },
+          { start: 142.5, duration: 8, text: "trecho com deep-link" },
+        ],
+      },
     });
   });
 
-  it("devolve null quando o Vídeo não tem Transcrição (tracks vazias)", async () => {
+  it('devolve { kind: "absent" } quando o Vídeo não tem Transcrição (tracks vazias)', async () => {
     const fetcher = new YoutubeTranscriptFetcher(makeClient({ id: "v1", tracks: [] }));
 
-    const transcript = await fetcher.fetchTranscript("v1");
+    const result = await fetcher.fetchTranscript("v1");
 
-    expect(transcript).toBeNull();
+    expect(result).toEqual({ kind: "absent" });
   });
 
-  it("devolve null quando todas as tracks estão sem trechos", async () => {
+  it('devolve { kind: "absent" } quando todas as tracks estão sem trechos', async () => {
     const fetcher = new YoutubeTranscriptFetcher(
       makeClient({ id: "v1", tracks: [{ language: "pt", transcript: [] }] }),
     );
 
-    const transcript = await fetcher.fetchTranscript("v1");
+    const result = await fetcher.fetchTranscript("v1");
 
-    expect(transcript).toBeNull();
+    expect(result).toEqual({ kind: "absent" });
   });
 
-  it("devolve null quando o serviço não-oficial falha (não derruba o pipeline)", async () => {
-    const fetcher = new YoutubeTranscriptFetcher(makeClientThrowing());
+  it('devolve { kind: "error", cause } carregando o Error original quando o serviço não-oficial falha (não re-embrulha em string)', async () => {
+    const cause = new Error("vídeo exige autenticação extra");
+    const fetcher = new YoutubeTranscriptFetcher(makeClientThrowing(cause));
 
-    const transcript = await fetcher.fetchTranscript("v1");
+    const result = await fetcher.fetchTranscript("v1");
 
-    expect(transcript).toBeNull();
+    expect(result).toEqual({ kind: "error", cause });
+    // O cause é o próprio Error original, não uma string re-embrulhada.
+    expect(result.kind).toBe("error");
+    if (result.kind === "error") {
+      expect(result.cause).toBe(cause);
+    }
   });
 });

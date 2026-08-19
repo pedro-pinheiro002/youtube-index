@@ -14,7 +14,12 @@ import { CommentsDisabledError, type YouTubeClient } from "./youtube.js";
 export interface IngestionLogger {
   info(message: string): void;
   warn(message: string): void;
-  error(message: string): void;
+  /**
+   * Logs a failure. The optional `cause` carries the original `Error` so
+   * transient failures (e.g. a `TranscriptResult` of `error`) can be
+   * surfaced for debugging — the message alone discards the cause.
+   */
+  error(message: string, cause?: Error): void;
   event(event: string, data: Record<string, unknown>): void;
 }
 
@@ -222,7 +227,7 @@ export function createIngestion(deps: IngestionDeps) {
         done += 1;
         continue;
       }
-      const transcript = await deps.transcripts.fetchTranscript(video.id);
+      const result = await deps.transcripts.fetchTranscript(video.id);
       // Em Sincronização, Segmentos antigos do Vídeo podem ter ficado stale
       // no Índice — a Transcrição pode ter sido corrigida (segmentos
       // diferentes) ou removida. Varre antes de qualquer mudança para não
@@ -231,26 +236,41 @@ export function createIngestion(deps: IngestionDeps) {
         await deps.projection.remove(channelId, (hit) => hit.type === "segment" && hit.videoId === video.id);
       }
       deps.ledger.deleteTranscriptSegmentsForVideo(video.id);
-      if (transcript) {
-        const context = deps.ledger.videoContext(video.id);
-        if (!context) {
-          throw new Error(`vídeo ${video.id} sem contexto no Ledger`);
+      // O contrato discriminado substitui o antigo `Transcript | null`. Os
+      // três outcomes são tratados exaustivamente: `transcript` upserta os
+      // Segmentos; `absent` marca ausência permanente; `error` lança para a
+      // Fase falhar e o Vídeo permanece retriable (sem ausência durável).
+      switch (result.kind) {
+        case "transcript": {
+          const context = deps.ledger.videoContext(video.id);
+          if (!context) {
+            throw new Error(`vídeo ${video.id} sem contexto no Ledger`);
+          }
+          for (const segment of result.transcript.segments) {
+            const record: TranscriptSegmentRecord = {
+              id: `${video.id}:${segment.start}`,
+              videoId: video.id,
+              channelId,
+              start: segment.start,
+              end: segment.start + segment.duration,
+              text: segment.text,
+            };
+            deps.ledger.upsertTranscriptSegment(record);
+            documents.push(toSegmentDocument(record, context));
+            added += 1;
+          }
+          break;
         }
-        for (const segment of transcript.segments) {
-          const record: TranscriptSegmentRecord = {
-            id: `${video.id}:${segment.start}`,
-            videoId: video.id,
-            channelId,
-            start: segment.start,
-            end: segment.start + segment.duration,
-            text: segment.text,
-          };
-          deps.ledger.upsertTranscriptSegment(record);
-          documents.push(toSegmentDocument(record, context));
-          added += 1;
+        case "absent": {
+          deps.ledger.markTranscriptAbsent(video.id);
+          break;
         }
-      } else {
-        deps.ledger.markTranscriptAbsent(video.id);
+        case "error": {
+          // Falha transitória: NÃO marca ausência (o Vídeo permanece
+          // retriable na próxima Sincronização). Lança o cause para o
+          // runJob catch marcar a Fase como failed e logar o cause.
+          throw result.cause;
+        }
       }
       done += 1;
       deps.ledger.updatePhase(channelId, "transcripts", { done });
@@ -282,10 +302,11 @@ export function createIngestion(deps: IngestionDeps) {
       await runTranscriptsPhase(channelId);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
+      const cause = err instanceof Error ? err : undefined;
       deps.ledger.setChannelStatus(channelId, "failed");
       deps.ledger.updatePhase(channelId, currentPhase, { status: "failed" });
       deps.ledger.setChannelError(channelId, message);
-      log.error(`[${channelId}] fase "${currentPhase}" falhou: ${message}`);
+      log.error(`[${channelId}] fase "${currentPhase}" falhou: ${message}`, cause);
       throw err;
     }
     deps.ledger.setChannelStatus(channelId, "completed");

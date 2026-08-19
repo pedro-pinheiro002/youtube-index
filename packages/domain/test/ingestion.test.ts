@@ -11,6 +11,7 @@ import type {
   ProjectionHit,
   Transcript,
   TranscriptFetcher,
+  TranscriptResult,
   YouTubeClient,
   YouTubeComment,
   YouTubeVideo,
@@ -36,11 +37,27 @@ function makeLedger(): Ledger {
 }
 
 function makeTranscriptFetcher(): TranscriptFetcher {
-  return { fetchTranscript: async () => null };
+  // Default: every Vídeo is absent (no Transcrição). The mock speaks the
+  // discriminated TranscriptResult contract — `absent` is the neutral default,
+  // not `null`.
+  return { fetchTranscript: async () => ({ kind: "absent" }) };
+}
+
+// Maps a fixture `Transcript | null` (undefined → absent, null → absent,
+// Transcript → transcript) into the discriminated `TranscriptResult`. Shared
+// by `makeTranscriptFetcherWith` and `makeRecordingTranscriptFetcher` so the
+// null→absent convention lives in one place.
+function toTranscriptResult(entry: Transcript | null | undefined): TranscriptResult {
+  if (entry === undefined || entry === null) {
+    return { kind: "absent" };
+  }
+  return { kind: "transcript", transcript: entry };
 }
 
 function makeTranscriptFetcherWith(transcripts: Record<string, Transcript | null>): TranscriptFetcher {
-  return { fetchTranscript: async (videoId) => transcripts[videoId] ?? null };
+  return {
+    fetchTranscript: async (videoId): Promise<TranscriptResult> => toTranscriptResult(transcripts[videoId]),
+  };
 }
 
 function makeRecordingTranscriptFetcher(transcripts: Record<string, Transcript | null>) {
@@ -48,9 +65,9 @@ function makeRecordingTranscriptFetcher(transcripts: Record<string, Transcript |
   return {
     calls,
     fetcher: {
-      fetchTranscript: async (videoId: string) => {
+      fetchTranscript: async (videoId: string): Promise<TranscriptResult> => {
         calls.push(videoId);
-        return transcripts[videoId] ?? null;
+        return toTranscriptResult(transcripts[videoId]);
       },
     } satisfies TranscriptFetcher,
   };
@@ -83,15 +100,18 @@ function makeRecordingProjection() {
 
 function makeRecordingLogger() {
   const events: Array<{ event: string; data: Record<string, unknown> }> = [];
+  const errorCalls: Array<{ message: string; cause?: Error }> = [];
   const logger: IngestionLogger = {
     info: () => {},
     warn: () => {},
-    error: () => {},
+    error: (message: string, cause?: Error) => {
+      errorCalls.push({ message, cause });
+    },
     event: (event: string, data: Record<string, unknown>) => {
       events.push({ event, data });
     },
   };
-  return { logger, events };
+  return { logger, events, errorCalls };
 }
 
 function makeYouTubeClient(
@@ -570,13 +590,22 @@ describe("createIngestion", () => {
       ]);
     });
 
-    it("marca Vídeos sem Transcrição no Ledger e não derruba a Fase", async () => {
+    it('variant "absent": marca o Vídeo como ausente no Ledger (markTranscriptAbsent) e não derruba a Fase', async () => {
       const { ledger, ingestion } = makeChannelWithVideos();
       await ingestion._runPhase("videos", CHANNEL_ID);
-      const fetcher = makeTranscriptFetcherWith({
-        v1: { videoId: "v1", segments: [{ start: 0, duration: 10, text: "único trecho" }] },
-        v2: null,
-      });
+      // O fetcher devolve explicitamente { kind: "absent" } para v2 — o
+      // contrato discriminado substitui o antigo `null`.
+      const fetcher: TranscriptFetcher = {
+        fetchTranscript: async (videoId): Promise<TranscriptResult> => {
+          if (videoId === "v1") {
+            return {
+              kind: "transcript",
+              transcript: { videoId: "v1", segments: [{ start: 0, duration: 10, text: "único trecho" }] },
+            };
+          }
+          return { kind: "absent" };
+        },
+      };
       const ingestionTranscripts = createIngestion({
         youtube: makeYouTubeClient([], {}),
         transcripts: fetcher,
@@ -586,6 +615,7 @@ describe("createIngestion", () => {
 
       await ingestionTranscripts._runPhase("transcripts", CHANNEL_ID);
 
+      // absent → markTranscriptAbsent(v2); hasTranscriptIngestion(v2) permanece false.
       expect(ledger.listTranscriptAbsences(CHANNEL_ID)).toEqual(["v2"]);
       expect(ledger.listTranscriptSegments(CHANNEL_ID)).toHaveLength(1);
       expect(ledger.getChannel(CHANNEL_ID)?.phases.transcripts).toMatchObject({
@@ -593,6 +623,120 @@ describe("createIngestion", () => {
         done: 2,
         total: 2,
       });
+    });
+
+    it('variant "error": lança, NÃO chama markTranscriptAbsent, o cause flui para o logger, e o Vídeo é retriable numa chamada "transcript" posterior', async () => {
+      const { ledger, ingestion } = makeChannelWithVideos();
+      await ingestion._runPhase("videos", CHANNEL_ID);
+      const cause = new Error("timeout do serviço não-oficial");
+      // v1 falha transitoriamente (error); v2 tem Transcrição.
+      const fetcher: TranscriptFetcher = {
+        fetchTranscript: async (videoId): Promise<TranscriptResult> => {
+          if (videoId === "v1") {
+            return { kind: "error", cause };
+          }
+          return {
+            kind: "transcript",
+            transcript: { videoId: "v2", segments: [{ start: 0, duration: 10, text: "trecho de v2" }] },
+          };
+        },
+      };
+      const ingestionTranscripts = createIngestion({
+        youtube: makeYouTubeClient([], {}),
+        transcripts: fetcher,
+        ledger,
+        projection: makeProjection(),
+      });
+
+      // error → throw. (O cause flui para o logger via runJob's catch —
+      // exercido no teste "não envenena o Canal" abaixo.)
+      await expect(ingestionTranscripts._runPhase("transcripts", CHANNEL_ID)).rejects.toBe(cause);
+
+      // NÃO chama markTranscriptAbsent para v1: nenhuma ausência é escrita.
+      // (v2 foi processado antes de v1 falhar — seu Segmento é upsertado.)
+      expect(ledger.listTranscriptAbsences(CHANNEL_ID)).toEqual([]);
+      // v1 (o Vídeo que falhou) permanece retriable: sem Segmento e sem
+      // ausência marcada.
+      const segmentsAfterError = ledger.listTranscriptSegments(CHANNEL_ID);
+      expect(segmentsAfterError.map((s) => s.videoId)).toEqual(["v2"]);
+
+      // Retomada: numa chamada posterior com { kind: "transcript" } para v1,
+      // o Vídeo é ingerido com sucesso e a Fase conclui. v2 já tem
+      // hasTranscriptIngestion true (Segmento da primeira tentativa) e é
+      // pulado — o que confirma que v1 está retriable, não duravelmente
+      // marcado.
+      const okFetcher: TranscriptFetcher = {
+        fetchTranscript: async (videoId): Promise<TranscriptResult> => {
+          if (videoId === "v1") {
+            return {
+              kind: "transcript",
+              transcript: { videoId: "v1", segments: [{ start: 0, duration: 10, text: "trecho de v1" }] },
+            };
+          }
+          return { kind: "absent" };
+        },
+      };
+      const okIngestion = createIngestion({
+        youtube: makeYouTubeClient([], {}),
+        transcripts: okFetcher,
+        ledger,
+        projection: makeProjection(),
+      });
+
+      await okIngestion._runPhase("transcripts", CHANNEL_ID);
+
+      // v1 agora tem Segmento ingerido; nenhuma ausência marcada para ele.
+      const segmentsAfterOk = ledger.listTranscriptSegments(CHANNEL_ID).map((s) => s.videoId).sort();
+      expect(segmentsAfterOk).toEqual(["v1", "v2"]);
+      expect(ledger.listTranscriptAbsences(CHANNEL_ID)).toEqual([]);
+      expect(ledger.getChannel(CHANNEL_ID)?.phases.transcripts).toMatchObject({
+        status: "completed",
+        done: 2,
+        total: 2,
+      });
+    });
+
+    it('variant "error" de um Vídeo não envenena o Canal: runJob marca a Fase failed e permanece resumível', async () => {
+      const ledger = makeLedger();
+      ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
+      // Pré-popula Vídeos e marca as Fases de Vídeos e Comentários como
+      // completed, para que runJob retome direto na Fase de Transcrições.
+      ledger.upsertVideo({
+        id: "v1",
+        channelId: CHANNEL_ID,
+        title: "Vídeo v1",
+        description: "desc",
+        publishedAt: "2023-01-01T00:00:00Z",
+        views: 1,
+        likes: 0,
+        durationSeconds: 10,
+      });
+      ledger.updatePhase(CHANNEL_ID, "videos", { status: "completed", total: 1 });
+      ledger.updatePhase(CHANNEL_ID, "comments", { status: "completed", total: 1 });
+
+      const cause = new Error("DNS do serviço não-oficial");
+      const fetcher: TranscriptFetcher = {
+        fetchTranscript: async (): Promise<TranscriptResult> => ({ kind: "error", cause }),
+      };
+      const { logger, errorCalls } = makeRecordingLogger();
+      const ingestion = createIngestion({
+        youtube: makeYouTubeClient([{ videos: [], nextPageToken: null }], {}),
+        transcripts: fetcher,
+        ledger,
+        projection: makeProjection(),
+        logger,
+      });
+
+      await expect(ingestion.runJob(CHANNEL_ID)).rejects.toBe(cause);
+
+      // A Fase de Transcrições está failed (resumível), não completed.
+      expect(ledger.getChannel(CHANNEL_ID)?.phases.transcripts).toMatchObject({ status: "failed" });
+      expect(ledger.getChannel(CHANNEL_ID)?.status).toBe("failed");
+      // Nenhuma ausência durável escrita — o Vídeo permanece retriable.
+      expect(ledger.listTranscriptAbsences(CHANNEL_ID)).toEqual([]);
+      // O cause original flui para o logger.
+      expect(errorCalls).toHaveLength(1);
+      expect(errorCalls[0]?.cause).toBe(cause);
     });
 
     it("conclui a Fase quando nenhum Vídeo tem Transcrição", async () => {
