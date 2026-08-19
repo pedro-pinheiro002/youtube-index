@@ -60,15 +60,15 @@ describe("pollOnce", () => {
   it("consome o job da Fila, executa a Fase de Vídeos e completa o job", async () => {
     const db = makeDatabase();
     const ledger = makeLedger(db);
-    const fila = makeQueue(db);
+    const queue = makeQueue(db);
     makeChannel(ledger);
-    const job = fila.enqueue(CHANNEL_ID);
+    const job = queue.enqueue(CHANNEL_ID);
     const ingestion = makeIngestion(ledger);
 
-    const processed = await pollOnce({ fila, ingestion });
+    const processed = await pollOnce({ queue, ingestion });
 
     expect(processed).toBe(true);
-    expect(fila.listJobs(CHANNEL_ID)).toEqual([
+    expect(queue.listJobs(CHANNEL_ID)).toEqual([
       expect.objectContaining({ id: job.id, status: "completed" }),
     ]);
     expect(ledger.getChannel(CHANNEL_ID)).toMatchObject({
@@ -81,18 +81,18 @@ describe("pollOnce", () => {
   it("marca o job como failed e relança o erro quando a Ingestão falha", async () => {
     const db = makeDatabase();
     const ledger = makeLedger(db);
-    const fila = makeQueue(db);
+    const queue = makeQueue(db);
     makeChannel(ledger);
-    const job = fila.enqueue(CHANNEL_ID);
+    const job = queue.enqueue(CHANNEL_ID);
     const failingIngestion: Ingestion = {
       runJob: async () => {
         throw new Error("cota esgotada");
       },
     };
 
-    await expect(pollOnce({ fila, ingestion: failingIngestion })).rejects.toThrow("cota esgotada");
+    await expect(pollOnce({ queue, ingestion: failingIngestion })).rejects.toThrow("cota esgotada");
 
-    expect(fila.listJobs(CHANNEL_ID)).toEqual([
+    expect(queue.listJobs(CHANNEL_ID)).toEqual([
       expect.objectContaining({ id: job.id, status: "failed" }),
     ]);
   });
@@ -100,9 +100,9 @@ describe("pollOnce", () => {
   it("retorna false quando não há job na Fila", async () => {
     const db = makeDatabase();
     const ledger = makeLedger(db);
-    const fila = makeQueue(db);
+    const queue = makeQueue(db);
 
-    const processed = await pollOnce({ fila, ingestion: makeIngestion(ledger) });
+    const processed = await pollOnce({ queue, ingestion: makeIngestion(ledger) });
 
     expect(processed).toBe(false);
   });

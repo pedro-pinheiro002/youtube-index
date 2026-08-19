@@ -8,7 +8,7 @@ import type { IngestionQueue, Ledger, SearchPort, YouTubeClient } from "@youtube
 
 export interface AppDeps {
   ledger: Ledger;
-  fila: IngestionQueue;
+  queue: IngestionQueue;
   youtube: YouTubeClient;
   search: SearchPort;
 }

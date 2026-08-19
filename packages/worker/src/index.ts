@@ -1,16 +1,7 @@
 import { loadConfig } from "./config.js";
 import { createHealthServer } from "./health.js";
 import { pollOnce } from "./worker.js";
-import {
-  createDatabase,
-  createIngestion,
-  createMeilisearchProjection,
-  SqliteIngestionQueue,
-  SqliteLedger,
-  YouTubeDataApiClient,
-  YoutubeTranscriptFetcher,
-  type IngestionLogger,
-} from "@youtube-index/domain";
+import { createDatabase, createServices, type IngestionLogger } from "@youtube-index/domain";
 
 const logger: IngestionLogger = {
   info: (message) => console.log(`[worker] ${message}`),
@@ -23,16 +14,15 @@ async function main(): Promise<void> {
   const config = loadConfig();
 
   const db = createDatabase(config.dbPath);
-  const ledger = new SqliteLedger(db);
-  const fila = new SqliteIngestionQueue(db);
-  const youtube = new YouTubeDataApiClient(config.youtubeApiKey);
-
-  const transcripts = new YoutubeTranscriptFetcher();
-  const projection = await createMeilisearchProjection({
-    url: config.meiliUrl,
-    masterKey: config.meiliMasterKey,
+  const services = await createServices({
+    db,
+    config: {
+      youtubeApiKey: config.youtubeApiKey,
+      meilisearchUrl: config.meiliUrl,
+      meilisearchMasterKey: config.meiliMasterKey,
+    },
+    logger,
   });
-  const ingestion = createIngestion({ youtube, transcripts, ledger, projection, logger });
 
   const healthServer = createHealthServer();
   await new Promise<void>((resolve) => healthServer.listen(config.healthPort, resolve));
@@ -41,7 +31,7 @@ async function main(): Promise<void> {
 
   const tick = async () => {
     try {
-      const processed = await pollOnce({ fila, ingestion });
+      const processed = await pollOnce({ queue: services.queue, ingestion: services.ingestion });
       if (processed) {
         logger.info("job processado com sucesso");
       }

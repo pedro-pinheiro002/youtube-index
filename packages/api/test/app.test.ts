@@ -4,7 +4,7 @@ import { makeConfig, makeLedger, makeQueue, makeSearchClient, makeYouTubeClient 
 
 describe("GET /health", () => {
   it("responde com status ok", async () => {
-    const app = buildApp(makeConfig(), { ledger: makeLedger(), fila: makeQueue(), youtube: makeYouTubeClient(), search: makeSearchClient() });
+    const app = buildApp(makeConfig(), { ledger: makeLedger(), queue: makeQueue(), youtube: makeYouTubeClient(), search: makeSearchClient() });
 
     const res = await app.inject({ method: "GET", url: "/health" });
 
@@ -13,7 +13,7 @@ describe("GET /health", () => {
   });
 
   it("rota desconhecida responde 404 quando sem frontend estático", async () => {
-    const app = buildApp(makeConfig(), { ledger: makeLedger(), fila: makeQueue(), youtube: makeYouTubeClient(), search: makeSearchClient() });
+    const app = buildApp(makeConfig(), { ledger: makeLedger(), queue: makeQueue(), youtube: makeYouTubeClient(), search: makeSearchClient() });
 
     const res = await app.inject({ method: "GET", url: "/nao-existe" });
 

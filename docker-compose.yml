@@ -53,6 +53,7 @@ services:
       MEILI_URL: http://meilisearch:7700
       MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:-youtube-index-dev-master-key}
       DB_PATH: /app/data/youtube-index.db
+      YOUTUBE_API_KEY: ${YOUTUBE_API_KEY:-}
     volumes:
       - db_data:/app/data
     healthcheck:

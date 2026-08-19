@@ -1,16 +1,20 @@
 import { buildApp } from "./app.js";
 import { loadConfig } from "./config.js";
-import { createDatabase, createMeilisearchProjection, SqliteIngestionQueue, SqliteLedger, YouTubeDataApiClient } from "@youtube-index/domain";
+import { createDatabase, createServices } from "@youtube-index/domain";
 
 async function main(): Promise<void> {
   const config = loadConfig();
 
   const db = createDatabase(config.dbPath);
-  const ledger = new SqliteLedger(db);
-  const fila = new SqliteIngestionQueue(db);
-  const youtube = new YouTubeDataApiClient(config.youtubeApiKey);
-  const search = await createMeilisearchProjection({ url: config.meiliUrl, masterKey: config.meiliMasterKey });
-  const app = buildApp(config, { ledger, fila, youtube, search });
+  const services = await createServices({
+    db,
+    config: {
+      youtubeApiKey: config.youtubeApiKey,
+      meilisearchUrl: config.meiliUrl,
+      meilisearchMasterKey: config.meiliMasterKey,
+    },
+  });
+  const app = buildApp(config, services);
 
   try {
     await app.listen({ host: config.host, port: config.port });

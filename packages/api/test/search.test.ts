@@ -33,7 +33,7 @@ describe("GET /search", () => {
     const ledger = makeLedger();
     ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
     const search = makeSearchClient(makeResults());
-    const app = buildApp(makeConfig(), { ledger, fila: makeQueue(), youtube: makeYouTubeClient(), search });
+    const app = buildApp(makeConfig(), { ledger, queue: makeQueue(), youtube: makeYouTubeClient(), search });
 
     const res = await app.inject({ method: "GET", url: `/search?q=vídeo&channelId=${CHANNEL_ID}` });
 
@@ -46,7 +46,7 @@ describe("GET /search", () => {
     const ledger = makeLedger();
     ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
     const search = makeSearchClient();
-    const app = buildApp(makeConfig(), { ledger, fila: makeQueue(), youtube: makeYouTubeClient(), search });
+    const app = buildApp(makeConfig(), { ledger, queue: makeQueue(), youtube: makeYouTubeClient(), search });
 
     const res = await app.inject({
       method: "GET",
@@ -84,7 +84,7 @@ describe("GET /search", () => {
       query: "comentário",
     };
     const search = makeSearchClient(commentResults);
-    const app = buildApp(makeConfig(), { ledger, fila: makeQueue(), youtube: makeYouTubeClient(), search });
+    const app = buildApp(makeConfig(), { ledger, queue: makeQueue(), youtube: makeYouTubeClient(), search });
 
     const res = await app.inject({
       method: "GET",
@@ -97,7 +97,7 @@ describe("GET /search", () => {
   });
 
   it("responde 400 quando q é obrigatório", async () => {
-    const app = buildApp(makeConfig(), { ledger: makeLedger(), fila: makeQueue(), youtube: makeYouTubeClient(), search: makeSearchClient() });
+    const app = buildApp(makeConfig(), { ledger: makeLedger(), queue: makeQueue(), youtube: makeYouTubeClient(), search: makeSearchClient() });
 
     const res = await app.inject({ method: "GET", url: "/search" });
 
@@ -105,7 +105,7 @@ describe("GET /search", () => {
   });
 
   it("responde 400 quando channelId é obrigatório", async () => {
-    const app = buildApp(makeConfig(), { ledger: makeLedger(), fila: makeQueue(), youtube: makeYouTubeClient(), search: makeSearchClient() });
+    const app = buildApp(makeConfig(), { ledger: makeLedger(), queue: makeQueue(), youtube: makeYouTubeClient(), search: makeSearchClient() });
 
     const res = await app.inject({ method: "GET", url: "/search?q=x" });
 
@@ -113,7 +113,7 @@ describe("GET /search", () => {
   });
 
   it("responde 404 para um channelId desconhecido", async () => {
-    const app = buildApp(makeConfig(), { ledger: makeLedger(), fila: makeQueue(), youtube: makeYouTubeClient(), search: makeSearchClient() });
+    const app = buildApp(makeConfig(), { ledger: makeLedger(), queue: makeQueue(), youtube: makeYouTubeClient(), search: makeSearchClient() });
 
     const res = await app.inject({ method: "GET", url: "/search?q=x&channelId=desconhecido" });
 
@@ -121,7 +121,7 @@ describe("GET /search", () => {
   });
 
   it("responde 400 para tipo inválido", async () => {
-    const app = buildApp(makeConfig(), { ledger: makeLedger(), fila: makeQueue(), youtube: makeYouTubeClient(), search: makeSearchClient() });
+    const app = buildApp(makeConfig(), { ledger: makeLedger(), queue: makeQueue(), youtube: makeYouTubeClient(), search: makeSearchClient() });
 
     const res = await app.inject({ method: "GET", url: `/search?q=x&channelId=${CHANNEL_ID}&tipo=reply` });
 
@@ -129,7 +129,7 @@ describe("GET /search", () => {
   });
 
   it("responde 400 para sort inválido", async () => {
-    const app = buildApp(makeConfig(), { ledger: makeLedger(), fila: makeQueue(), youtube: makeYouTubeClient(), search: makeSearchClient() });
+    const app = buildApp(makeConfig(), { ledger: makeLedger(), queue: makeQueue(), youtube: makeYouTubeClient(), search: makeSearchClient() });
 
     const res = await app.inject({ method: "GET", url: `/search?q=x&channelId=${CHANNEL_ID}&sort=likes` });
 
