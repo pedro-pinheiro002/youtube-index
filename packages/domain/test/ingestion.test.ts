@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createDatabase } from "../src/schema.js";
 import { SqliteLedger } from "../src/ledger.js";
 import { createIngestion } from "../src/ingestion.js";
@@ -7,6 +7,7 @@ import type {
   Documento,
   IngestionLogger,
   Ledger,
+  Phase,
   Projection,
   ProjectionHit,
   Transcript,
@@ -1745,6 +1746,81 @@ describe("createIngestion", () => {
         expect(addedDocs.filter((d) => d.type === "segment")).toEqual([]);
         expect(ledger.listTranscriptAbsences(CHANNEL_ID)).toEqual(["v1"]);
       });
+    });
+  });
+
+  describe("Ingestion loop via registry seam", () => {
+    function makeFakePhase(key: Phase["key"], run: (channelId: string) => Promise<void>): Phase {
+      return {
+        key,
+        label: key,
+        doc: key === "videos" ? "video" : "comment",
+        describe: () => "",
+        run,
+      };
+    }
+
+    it("chama os runs do registry na ordem e marca o Canal como completed", async () => {
+      const ledger = makeLedger();
+      ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
+
+      const videosRun = vi.fn(async () => {});
+      const commentsRun = vi.fn(async () => {});
+      const fakePhases: readonly Phase[] = [
+        makeFakePhase("videos", videosRun),
+        makeFakePhase("comments", commentsRun),
+      ];
+
+      const ingestion = createIngestion(
+        {
+          youtube: makeYouTubeClient([], {}),
+          transcripts: makeTranscriptFetcher(),
+          ledger,
+          projection: makeProjection(),
+        },
+        fakePhases,
+      );
+
+      await ingestion.runJob(CHANNEL_ID);
+
+      expect(videosRun).toHaveBeenCalledTimes(1);
+      expect(videosRun).toHaveBeenCalledWith(CHANNEL_ID);
+      expect(commentsRun).toHaveBeenCalledTimes(1);
+      expect(commentsRun).toHaveBeenCalledWith(CHANNEL_ID);
+      expect(ledger.getChannel(CHANNEL_ID)?.status).toBe("completed");
+    });
+
+    it("quando um run lança, marca a Fase e o Canal como failed e relança", async () => {
+      const ledger = makeLedger();
+      ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
+
+      const boom = new Error("falha na fase comments");
+      const videosRun = vi.fn(async () => {});
+      const commentsRun = vi.fn(async () => {
+        throw boom;
+      });
+      const fakePhases: readonly Phase[] = [
+        makeFakePhase("videos", videosRun),
+        makeFakePhase("comments", commentsRun),
+      ];
+
+      const ingestion = createIngestion(
+        {
+          youtube: makeYouTubeClient([], {}),
+          transcripts: makeTranscriptFetcher(),
+          ledger,
+          projection: makeProjection(),
+        },
+        fakePhases,
+      );
+
+      await expect(ingestion.runJob(CHANNEL_ID)).rejects.toThrow("falha na fase comments");
+
+      expect(videosRun).toHaveBeenCalledTimes(1);
+      expect(commentsRun).toHaveBeenCalledTimes(1);
+      expect(ledger.getChannel(CHANNEL_ID)?.status).toBe("failed");
+      expect(ledger.getChannel(CHANNEL_ID)?.phases.comments.status).toBe("failed");
+      expect(ledger.getChannel(CHANNEL_ID)?.lastError).toBe("falha na fase comments");
     });
   });
 });

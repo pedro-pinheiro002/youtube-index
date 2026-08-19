@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildApp } from "../src/app.js";
-import type { SearchResponse } from "@youtube-index/domain";
+import type { PhaseMeta, SearchResponse } from "@youtube-index/domain";
 import { makeConfig, makeLedger, makeQueue, makeSearchClient, makeYouTubeClient } from "./helpers.js";
 
 const CHANNEL_ID = "UCY8iijN1AkyDCh1Z9akcqUA";
@@ -134,5 +134,29 @@ describe("GET /search", () => {
     const res = await app.inject({ method: "GET", url: `/search?q=x&channelId=${CHANNEL_ID}&sort=likes` });
 
     expect(res.statusCode).toBe(400);
+  });
+
+  it("com um registry fake de um doc type, valida tipo apenas contra esse type", async () => {
+    const ledger = makeLedger();
+    ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
+    const search = makeSearchClient();
+    const fakePhases: readonly PhaseMeta[] = [
+      { key: "videos", label: "Vídeos", doc: "video", describe: () => "" },
+    ];
+    const app = buildApp(makeConfig(), { ledger, queue: makeQueue(), youtube: makeYouTubeClient(), search }, fakePhases);
+
+    // tipo=video existe no registry fake → 200
+    const ok = await app.inject({
+      method: "GET",
+      url: `/search?q=x&channelId=${CHANNEL_ID}&tipo=video`,
+    });
+    expect(ok.statusCode).toBe(200);
+
+    // tipo=comment não existe no registry fake → 400
+    const bad = await app.inject({
+      method: "GET",
+      url: `/search?q=x&channelId=${CHANNEL_ID}&tipo=comment`,
+    });
+    expect(bad.statusCode).toBe(400);
   });
 });

@@ -1,6 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 import type { ChannelStatus, ChannelWithPhases, PhaseKey, PhaseProgress, PhaseStatus } from "./types.js";
-import { PHASES } from "./types.js";
+import { PHASES } from "./phases.js";
 
 export interface CreateChannelInput {
   channelId: string;
@@ -122,7 +122,7 @@ export class SqliteLedger implements Ledger {
       "INSERT INTO channel_phases (channel_id, phase, status, done, total) VALUES (?, ?, 'pending', 0, NULL) " +
         "ON CONFLICT(channel_id, phase) DO NOTHING",
     );
-    for (const phase of PHASES) {
+    for (const phase of PHASES.map((p) => p.key)) {
       insertPhase.run(input.channelId, phase);
     }
 
@@ -146,7 +146,7 @@ export class SqliteLedger implements Ledger {
       .all(channelId) as unknown as PhaseRow[];
 
     const phases = {} as ChannelWithPhases["phases"];
-    for (const phase of PHASES) {
+    for (const phase of PHASES.map((p) => p.key)) {
       const phaseRow = phaseRows.find((p) => p.phase === phase);
       phases[phase] = {
         phase,

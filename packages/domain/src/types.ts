@@ -32,5 +32,3 @@ export interface Job {
   status: JobStatus;
   createdAt: string;
 }
-
-export const PHASES: readonly PhaseKey[] = ["videos", "comments", "transcripts"];

@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { ProgressView, formatProgress, PHASE_STATUS_LABELS } from "../src/ProgressView";
+import { ProgressView, describeActivity, formatProgress, PHASE_STATUS_LABELS } from "../src/ProgressView";
 import { makeChannelWithPhases } from "./helpers";
 
 describe("ProgressView", () => {
@@ -94,5 +94,37 @@ describe("PHASE_STATUS_LABELS", () => {
       completed: "Concluída",
       failed: "Falhou",
     });
+  });
+});
+
+describe("describeActivity com registry fake", () => {
+  const fakePhases = [
+    { key: "videos" as const, label: "Vídeos", doc: "video" as const, describe: () => "Listando os vídeos do canal…" },
+  ];
+
+  it("descreve a atividade quando a Fase do registry fake está rodando", () => {
+    const channel = makeChannelWithPhases({
+      status: "ingesting",
+      phases: {
+        videos: { phase: "videos", status: "running", done: 1, total: 1 },
+        comments: { phase: "comments", status: "pending", done: 0, total: null },
+        transcripts: { phase: "transcripts", status: "pending", done: 0, total: null },
+      },
+    });
+
+    expect(describeActivity(channel, fakePhases)).toBe("Listando os vídeos do canal…");
+  });
+
+  it("devolve Preparando quando nenhuma Fase do registry fake está rodando", () => {
+    const channel = makeChannelWithPhases({
+      status: "ingesting",
+      phases: {
+        videos: { phase: "videos", status: "pending", done: 0, total: null },
+        comments: { phase: "comments", status: "pending", done: 0, total: null },
+        transcripts: { phase: "transcripts", status: "pending", done: 0, total: null },
+      },
+    });
+
+    expect(describeActivity(channel, fakePhases)).toBe("Preparando…");
   });
 });

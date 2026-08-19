@@ -1,5 +1,8 @@
 import type { ChannelWithPhases, PhaseKey } from "./types";
-import { PHASES, PHASE_LABELS } from "./types";
+import { PHASES, formatProgress } from "./types";
+import type { PhaseMeta } from "./types";
+
+export { formatProgress } from "./types";
 
 export const CHANNEL_STATUS_LABELS: Record<ChannelWithPhases["status"], string> = {
   queued: "Na fila",
@@ -15,31 +18,19 @@ export const PHASE_STATUS_LABELS: Record<ChannelWithPhases["phases"][PhaseKey]["
   failed: "Falhou",
 };
 
-export function formatProgress(done: number, total: number | null): string {
-  if (total === null) {
-    return done > 0 ? `${done} processados` : "—";
-  }
-  return `${done}/${total}`;
-}
-
-export function describeActivity(channel: ChannelWithPhases): string | null {
+export function describeActivity(
+  channel: ChannelWithPhases,
+  phases: readonly PhaseMeta[] = PHASES,
+): string | null {
   if (channel.status === "queued") {
     return "Na fila, aguardando o processador…";
   }
   if (channel.status === "ingesting") {
-    const running = PHASES.find((phase) => channel.phases[phase].status === "running");
+    const running = phases.find((phase) => channel.phases[phase.key].status === "running");
     if (!running) {
       return "Preparando…";
     }
-    const progress = channel.phases[running];
-    switch (running) {
-      case "videos":
-        return "Listando os vídeos do canal…";
-      case "comments":
-        return `Buscando comentários (${formatProgress(progress.done, progress.total)})…`;
-      case "transcripts":
-        return `Buscando transcrições (${formatProgress(progress.done, progress.total)})…`;
-    }
+    return running.describe(channel.phases[running.key]);
   }
   if (channel.status === "failed") {
     return channel.lastError ?? "Falhou durante a ingestão";
@@ -49,10 +40,11 @@ export function describeActivity(channel: ChannelWithPhases): string | null {
 
 export interface ProgressViewProps {
   channel: ChannelWithPhases;
+  phases?: readonly PhaseMeta[];
 }
 
-export function ProgressView({ channel }: ProgressViewProps) {
-  const activity = describeActivity(channel);
+export function ProgressView({ channel, phases = PHASES }: ProgressViewProps) {
+  const activity = describeActivity(channel, phases);
 
   return (
     <section aria-label="Progresso da Ingestão">
@@ -62,11 +54,11 @@ export function ProgressView({ channel }: ProgressViewProps) {
       </p>
       {activity && <p>{activity}</p>}
       <ul>
-        {PHASES.map((phase) => {
-          const progress = channel.phases[phase];
+        {phases.map((phase) => {
+          const progress = channel.phases[phase.key];
           return (
-            <li key={phase}>
-              <span>{PHASE_LABELS[phase]}</span>: {PHASE_STATUS_LABELS[progress.status]} (
+            <li key={phase.key}>
+              <span>{phase.label}</span>: {PHASE_STATUS_LABELS[progress.status]} (
               {formatProgress(progress.done, progress.total)})
             </li>
           );

@@ -4,7 +4,7 @@ import { existsSync } from "node:fs";
 import type { AppConfig } from "./config.js";
 import { registerChannelRoutes } from "./channels.js";
 import { registerSearchRoutes } from "./search.js";
-import type { IngestionQueue, Ledger, SearchPort, YouTubeClient } from "@youtube-index/domain";
+import type { IngestionQueue, Ledger, PhaseMeta, SearchPort, YouTubeClient } from "@youtube-index/domain";
 
 export interface AppDeps {
   ledger: Ledger;
@@ -13,13 +13,17 @@ export interface AppDeps {
   search: SearchPort;
 }
 
-export function buildApp(config: AppConfig, deps: AppDeps): FastifyInstance {
+export function buildApp(
+  config: AppConfig,
+  deps: AppDeps,
+  phases?: readonly PhaseMeta[],
+): FastifyInstance {
   const app = Fastify({ logger: config.logger });
 
   app.get("/health", async () => ({ status: "ok" }));
 
   void registerChannelRoutes(app, deps);
-  void registerSearchRoutes(app, deps);
+  void registerSearchRoutes(app, deps, phases);
 
   if (config.webDistDir && existsSync(config.webDistDir)) {
     void app.register(fastifyStatic, { root: config.webDistDir });

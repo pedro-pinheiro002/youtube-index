@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createDatabase } from "../src/schema.js";
 import { SqliteLedger } from "../src/ledger.js";
 import {
+  rebuildAllProjections,
   rebuildCommentsProjection,
   rebuildTranscriptsProjection,
   rebuildVideosProjection,
@@ -194,5 +195,67 @@ describe("rebuildTranscriptsProjection", () => {
 
     expect(count).toBe(0);
     expect(projection.calls).toHaveLength(0);
+  });
+});
+
+describe("rebuildAllProjections", () => {
+  it("itera todas as Fases, soma as contagens e chama cada rebuild uma vez", async () => {
+    const ledger = makeLedger();
+    makeChannelWithVideo(ledger);
+    ledger.upsertComment({
+      id: "c1",
+      videoId: "v1",
+      channelId: CHANNEL_ID,
+      author: "Gato Funky",
+      text: "Primeiro comentário",
+      likes: 42,
+      publishedAt: "2023-01-02T00:00:00Z",
+    });
+    ledger.upsertTranscriptSegment({
+      id: "v1:142",
+      videoId: "v1",
+      channelId: CHANNEL_ID,
+      start: 142,
+      end: 150,
+      text: "trecho da transcrição",
+    });
+    const projection = makeRecordingProjection();
+
+    const count = await rebuildAllProjections(CHANNEL_ID, { ledger, projection });
+
+    // 1 vídeo + 1 comentário + 1 segmento
+    expect(count).toBe(3);
+    // cada Fase projeta exatamente uma vez
+    expect(projection.calls).toHaveLength(3);
+    const types = projection.calls.flatMap((c) => c.documents.map((d) => d.type));
+    expect(types).toEqual(["video", "comment", "segment"]);
+  });
+
+  it("devolve 0 sem chamar a Projeção quando o Canal não tem registros", async () => {
+    const ledger = makeLedger();
+    ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
+    const projection = makeRecordingProjection();
+
+    const count = await rebuildAllProjections(CHANNEL_ID, { ledger, projection });
+
+    expect(count).toBe(0);
+    expect(projection.calls).toHaveLength(0);
+  });
+
+  it("com um registry fake de uma Fase, chama apenas o rebuild dessa Fase", async () => {
+    const ledger = makeLedger();
+    makeChannelWithVideo(ledger);
+    const projection = makeRecordingProjection();
+
+    const fakePhases = [
+      { key: "videos" as const, label: "Vídeos", doc: "video" as const, describe: () => "" },
+    ];
+
+    const count = await rebuildAllProjections(CHANNEL_ID, { ledger, projection }, fakePhases);
+
+    expect(count).toBe(1);
+    // apenas a Fase de Vídeos é reconstruída
+    expect(projection.calls).toHaveLength(1);
+    expect(projection.calls[0]?.documents.map((d) => d.type)).toEqual(["video"]);
   });
 });

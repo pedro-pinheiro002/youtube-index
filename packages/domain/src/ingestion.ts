@@ -9,6 +9,7 @@ import {
 import type { CommentRecord, Ledger, TranscriptSegmentRecord, VideoRecord } from "./ledger.js";
 import type { TranscriptFetcher } from "./transcripts.js";
 import type { PhaseKey, PhaseStatus } from "./types.js";
+import { PHASES, type Phase } from "./phases.js";
 import { CommentsDisabledError, type YouTubeClient } from "./youtube.js";
 
 export interface IngestionLogger {
@@ -62,7 +63,13 @@ function isRecent(publishedAt: string, windowDays: number): boolean {
   return published >= Date.now() - windowDays * 86_400_000;
 }
 
-export function createIngestion(deps: IngestionDeps) {
+/**
+ * Builds the Phase registry — the single source of truth for ingestion phases
+ * (see #20). Maps the `PHASES` metadata (key/label/doc/describe) to a `Phase`
+ * whose `run` is bound to the given deps. The phase-run logic lives here as
+ * closures over `deps`.
+ */
+export function createPhases(deps: IngestionDeps): readonly Phase[] {
   const recentWindowDays = deps.recentWindowDays ?? DEFAULT_RECENT_WINDOW_DAYS;
   const log = deps.logger ?? NOOP_LOGGER;
 
@@ -283,23 +290,31 @@ export function createIngestion(deps: IngestionDeps) {
     log.info(`[${channelId}] fase transcripts concluída: ${done}/${videos.length} vídeos (${added} segmentos)`);
   }
 
+  const runByKey: Record<PhaseKey, (channelId: string) => Promise<void>> = {
+    videos: runVideosPhase,
+    comments: runCommentsPhase,
+    transcripts: runTranscriptsPhase,
+  };
+
+  return PHASES.map((meta) => ({ ...meta, run: runByKey[meta.key] }));
+}
+
+export function createIngestion(deps: IngestionDeps, phases: readonly Phase[] = createPhases(deps)) {
+  const log = deps.logger ?? NOOP_LOGGER;
+
   async function runJob(channelId: string): Promise<void> {
     const title = deps.ledger.getChannel(channelId)?.title ?? channelId;
     deps.ledger.setChannelStatus(channelId, "ingesting");
     deps.ledger.clearChannelError(channelId);
     log.info(`[${channelId}] ingestão iniciada: "${title}"`);
-    let currentPhase: PhaseKey = "videos";
+    let currentPhase: PhaseKey = phases[0]?.key ?? "videos";
     try {
-      // The Ingestion sequence is a fixed await chain: Vídeos → Comentários →
-      // Transcrições. Each Fase is a private function inside this module; the
-      // public interface exposes only `runJob`. (If the Phase registry from
-      // #20 lands, this body becomes `for (const phase of PHASES) await
-      // _runPhase(phase, channelId)` — the order then lives in the registry.)
-      await runVideosPhase(channelId);
-      currentPhase = "comments";
-      await runCommentsPhase(channelId);
-      currentPhase = "transcripts";
-      await runTranscriptsPhase(channelId);
+      // The Ingestion sequence is driven by the Phase registry (#20): the
+      // order lives in `phases`, and each Phase's `run` is invoked in turn.
+      for (const phase of phases) {
+        currentPhase = phase.key;
+        await phase.run(channelId);
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       const cause = err instanceof Error ? err : undefined;
@@ -323,14 +338,11 @@ export function createIngestion(deps: IngestionDeps) {
    * absent from the exported `Ingestion` type.
    */
   async function _runPhase(phase: PhaseKey, channelId: string): Promise<void> {
-    switch (phase) {
-      case "videos":
-        return runVideosPhase(channelId);
-      case "comments":
-        return runCommentsPhase(channelId);
-      case "transcripts":
-        return runTranscriptsPhase(channelId);
+    const phaseEntry = phases.find((p) => p.key === phase);
+    if (!phaseEntry) {
+      throw new Error(`fase desconhecida: ${phase}`);
     }
+    await phaseEntry.run(channelId);
   }
 
   return { runJob, _runPhase };

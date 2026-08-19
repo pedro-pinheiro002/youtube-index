@@ -8,7 +8,8 @@ export type {
   PhaseProgress,
   PhaseStatus,
 } from "./types.js";
-export { PHASES } from "./types.js";
+export type { Phase, PhaseMeta } from "./phases.js";
+export { formatProgress, PHASES } from "./phases.js";
 export type {
   CommentAbsenceReason,
   CreateChannelInput,
@@ -21,7 +22,7 @@ export type {
 export { SqliteLedger } from "./ledger.js";
 export { applySchema, createDatabase, openDatabase, SCHEMA } from "./schema.js";
 export type { Ingestion, IngestionDeps, IngestionLogger } from "./ingestion.js";
-export { createIngestion } from "./ingestion.js";
+export { createIngestion, createPhases } from "./ingestion.js";
 export type { IngestionQueue } from "./ingestion-queue.js";
 export { SqliteIngestionQueue } from "./ingestion-queue.js";
 export type {
@@ -49,8 +50,9 @@ export {
   STOP_WORDS_PT,
 } from "./documento.js";
 export type { SearchHit, SearchParams, SearchPort, SearchResponse, SearchSort } from "./search.js";
-export type { RebuildCommentsDeps, RebuildDeps, RebuildTranscriptsDeps } from "./rebuild.js";
+export type { RebuildAllDeps, RebuildCommentsDeps, RebuildDeps, RebuildTranscriptsDeps } from "./rebuild.js";
 export {
+  rebuildAllProjections,
   rebuildCommentsProjection,
   rebuildTranscriptsProjection,
   rebuildVideosProjection,

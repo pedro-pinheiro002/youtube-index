@@ -1,15 +1,21 @@
 import type { FastifyInstance } from "fastify";
-import type { Ledger, SearchDocumentType, SearchPort, SearchSort } from "@youtube-index/domain";
+import { PHASES } from "@youtube-index/domain";
+import type { Ledger, PhaseMeta, SearchDocumentType, SearchPort, SearchSort } from "@youtube-index/domain";
 
 export interface SearchRoutesDeps {
   ledger: Ledger;
   search: SearchPort;
 }
 
-const TIPOS: readonly SearchDocumentType[] = ["video", "comment", "segment"];
 const SORTS: readonly SearchSort[] = ["relevance", "publishedAt"];
 
-export function registerSearchRoutes(app: FastifyInstance, deps: SearchRoutesDeps): void {
+export function registerSearchRoutes(
+  app: FastifyInstance,
+  deps: SearchRoutesDeps,
+  phases: readonly PhaseMeta[] = PHASES,
+): void {
+  const TIPOS: readonly SearchDocumentType[] = phases.map((p) => p.doc);
+
   app.get<{ Querystring: { q?: string; channelId?: string; tipo?: string; sort?: string } }>(
     "/search",
     async (request, reply) => {

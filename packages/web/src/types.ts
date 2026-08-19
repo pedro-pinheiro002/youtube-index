@@ -25,14 +25,6 @@ export function isTerminalStatus(status: ChannelStatus): boolean {
   return status === "completed" || status === "failed";
 }
 
-export const PHASES: readonly PhaseKey[] = ["videos", "comments", "transcripts"];
-
-export const PHASE_LABELS: Record<PhaseKey, string> = {
-  videos: "Vídeos",
-  comments: "Comentários",
-  transcripts: "Transcrições",
-};
-
 import type {
   SearchDocumentType,
   SearchHit,
@@ -46,6 +38,9 @@ export type {
   SearchResponse,
   SearchSort,
 } from "@youtube-index/domain";
+
+export { PHASES, formatProgress } from "@youtube-index/domain";
+export type { PhaseMeta } from "@youtube-index/domain";
 
 export type TipoFilter = "all" | SearchDocumentType;
 
