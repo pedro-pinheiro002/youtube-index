@@ -10,7 +10,7 @@ export interface SearchViewProps {
 }
 
 export function SearchView({ channelId, api }: SearchViewProps) {
-  const { query, setQuery, tipo, setTipo, sort, setSort, submit, results, searching, error, hasSearched } =
+  const { query, setQuery, tipo, setTipo, sort, setSort, submit, clear, results, searching, error, hasSearched } =
     useSearch({ channelId, api });
 
   return (
@@ -28,6 +28,12 @@ export function SearchView({ channelId, api }: SearchViewProps) {
           type="search"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              event.preventDefault();
+              clear();
+            }
+          }}
           placeholder="palavra-chave"
         />
         <button type="submit" disabled={searching || query.trim() === ""}>

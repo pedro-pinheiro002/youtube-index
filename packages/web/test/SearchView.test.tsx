@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { SearchView } from "../src/SearchView";
@@ -88,5 +88,26 @@ describe("SearchView", () => {
     render(<SearchView channelId={CHANNEL_ID} api={makeSearchApi()} />);
 
     expect(screen.getByRole("button", { name: "Buscar" })).toBeDisabled();
+  });
+
+  it("Esc no input limpa o campo e os resultados exibidos", async () => {
+    const user = userEvent.setup();
+    const searchChannel = vi
+      .fn()
+      .mockResolvedValueOnce(makeSearchResponse({ hits: [makeVideoHit()], total: 1, query: "gato" }));
+    render(<SearchView channelId={CHANNEL_ID} api={makeSearchApi({ searchChannel })} />);
+
+    const input = screen.getByLabelText("Buscar");
+    await user.type(input, "gato");
+    await user.click(screen.getByRole("button", { name: "Buscar" }));
+
+    expect(await screen.findByRole("link", { name: "Primeiro vídeo" })).toBeInTheDocument();
+    expect(input).toHaveValue("gato");
+
+    fireEvent.keyDown(input, { key: "Escape" });
+
+    expect(input).toHaveValue("");
+    expect(screen.queryByRole("link", { name: "Primeiro vídeo" })).not.toBeInTheDocument();
+    expect(searchChannel).toHaveBeenCalledTimes(1);
   });
 });

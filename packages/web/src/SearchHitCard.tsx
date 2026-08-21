@@ -1,13 +1,25 @@
 import type { SearchHit } from "./types";
 
+// The <em> open tag injected by highlightHtml, carrying the violet highlight
+// styling. Kept as a literal so Tailwind v4's JIT picks up the arbitrary
+// opacity class (bg-violet-500/15) from the source.
+export const highlightTag =
+  '<em class="bg-violet-500/15 text-white not-italic font-medium rounded px-0.5">';
+
 export function highlightHtml(text: string): string {
+  // Security model: escape ALL HTML first, then decode ONLY the escaped
+  // <em> open/close tags back into real <em> tags (with the highlight
+  // classes injected). Everything else stays escaped, so arbitrary HTML
+  // coming from the Índice can never execute.
   const escaped = text
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
-  return escaped.replace(/&lt;em&gt;/g, "<em>").replace(/&lt;\/em&gt;/g, "</em>");
+  return escaped
+    .replace(/&lt;em&gt;/g, highlightTag)
+    .replace(/&lt;\/em&gt;/g, "</em>");
 }
 
 export function textOf(hit: SearchHit, field: string, fallback: string): string {
@@ -44,9 +56,15 @@ function Highlighted({ text }: { text: string }) {
 
 function VideoCard({ hit }: { hit: Extract<SearchHit, { type: "video" }> }) {
   return (
-    <article>
+    <article className="p-5">
       <a href={hit.url} target="_blank" rel="noreferrer">
-        <img src={hit.thumbnail} alt="" width={160} height={90} />
+        <img
+          src={hit.thumbnail}
+          alt=""
+          width={160}
+          height={90}
+          className="rounded-lg ring-1 ring-border"
+        />
       </a>
       <div>
         <h3>
@@ -68,9 +86,15 @@ function VideoCard({ hit }: { hit: Extract<SearchHit, { type: "video" }> }) {
 
 function CommentCard({ hit }: { hit: Extract<SearchHit, { type: "comment" }> }) {
   return (
-    <article>
+    <article className="p-4">
       <a href={hit.url} target="_blank" rel="noreferrer">
-        <img src={hit.videoThumbnail} alt="" width={160} height={90} />
+        <img
+          src={hit.videoThumbnail}
+          alt=""
+          width={160}
+          height={90}
+          className="rounded opacity-60"
+        />
       </a>
       <div>
         <h3>
@@ -84,9 +108,6 @@ function CommentCard({ hit }: { hit: Extract<SearchHit, { type: "comment" }> }) 
         <p>
           <Highlighted text={textOf(hit, "text", hit.text)} />
         </p>
-        <p>
-          {formatCount(hit.videoViews)} visualizações · {formatCount(hit.videoLikes)} curtidas
-        </p>
       </div>
     </article>
   );
@@ -94,9 +115,15 @@ function CommentCard({ hit }: { hit: Extract<SearchHit, { type: "comment" }> }) 
 
 function SegmentCard({ hit }: { hit: Extract<SearchHit, { type: "segment" }> }) {
   return (
-    <article>
+    <article className="p-4">
       <a href={hit.url} target="_blank" rel="noreferrer">
-        <img src={hit.videoThumbnail} alt="" width={160} height={90} />
+        <img
+          src={hit.videoThumbnail}
+          alt=""
+          width={160}
+          height={90}
+          className="rounded opacity-60"
+        />
       </a>
       <div>
         <h3>
