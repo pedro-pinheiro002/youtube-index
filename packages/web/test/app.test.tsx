@@ -2,8 +2,15 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { App } from "../src/App";
-import type { ChannelWithPhases } from "../src/types";
-import { makeApi, makeChannel, makeSearchApi } from "./helpers";
+import {
+  makeApi,
+  makeChannel,
+  makeCommentHit,
+  makeSearchApi,
+  makeSearchResponse,
+  makeSegmentHit,
+  makeVideoHit,
+} from "./helpers";
 
 describe("App", () => {
   it("renderiza o título do aplicativo", () => {
@@ -138,5 +145,72 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "Ingerir Canal" }));
 
     await waitFor(() => expect(document.title).toBe("youtube-index — @funkyblackcat"));
+  });
+
+  it("coluna centralizada tem largura máxima ~768px e padding lateral responsivo px-4 sm:px-6 md:px-8", () => {
+    render(<App api={makeApi()} />);
+
+    const main = screen.getByRole("main");
+    expect(main).toHaveClass("max-w-3xl");
+    expect(main).toHaveClass("mx-auto");
+    expect(main).toHaveClass("px-4");
+    expect(main).toHaveClass("sm:px-6");
+    expect(main).toHaveClass("md:px-8");
+  });
+
+  it("tela de resultados usa violeta em no máximo 3 categorias: botões primários, focus ring, <em> background", async () => {
+    const user = userEvent.setup();
+    const api = makeApi({ createChannel: async () => makeChannel("completed") });
+    const searchChannel = vi.fn().mockResolvedValue(
+      makeSearchResponse({
+        hits: [makeVideoHit(), makeCommentHit(), makeSegmentHit()],
+        total: 3,
+        query: "gato",
+      }),
+    );
+    const searchApi = makeSearchApi({ searchChannel });
+
+    const { container } = render(
+      <App api={api} searchApi={searchApi} pollIntervalMs={50} />,
+    );
+
+    await user.type(screen.getByLabelText("@handle do Canal"), "@funkyblackcat");
+    await user.click(screen.getByRole("button", { name: "Ingerir Canal" }));
+
+    const searchInput = await screen.findByLabelText("Buscar");
+    await user.type(searchInput, "gato");
+    fireEvent.keyDown(searchInput, { key: "Enter" });
+
+    // Aguarda os resultados renderizarem antes de coletar as classes de violeta.
+    await waitFor(() => {
+      expect(searchChannel).toHaveBeenCalled();
+    });
+    await screen.findAllByRole("link", { name: "Primeiro vídeo" });
+
+    // Regra de design: violeta é usado em no máximo 3 categorias:
+    //   1. botões primários (bg-primary)
+    //   2. focus rings (focus-visible:ring-ring)
+    //   3. destaque do <em> nos resultados da Busca (bg-violet-500/15)
+    // Adicionar uma 4ª categoria (ex.: outro tom bg-violet-*) violaria a
+    // regra e quebraria esta asserção.
+    const violetPatterns = new Set<string>();
+    container.querySelectorAll<HTMLElement>("*").forEach((el) => {
+      const cls = el.className;
+      if (typeof cls !== "string") return;
+      cls.split(/\s+/).forEach((token) => {
+        if (
+          token === "bg-primary" ||
+          token.includes("violet") ||
+          token.includes("ring-ring")
+        ) {
+          violetPatterns.add(token);
+        }
+      });
+    });
+
+    expect(violetPatterns.size).toBeLessThanOrEqual(3);
+    expect(violetPatterns.has("bg-primary")).toBe(true);
+    expect(violetPatterns.has("bg-violet-500/15")).toBe(true);
+    expect(violetPatterns.has("focus-visible:ring-ring")).toBe(true);
   });
 });
