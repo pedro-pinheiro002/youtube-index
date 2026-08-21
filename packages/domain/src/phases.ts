@@ -12,9 +12,12 @@ export interface Phase extends PhaseMeta {
   run: (channelId: string) => Promise<void>;
 }
 
+const ptBRNumber = new Intl.NumberFormat("pt-BR");
+
 export function formatProgress(done: number, total: number | null): string {
-  if (total === null) return done > 0 ? `${done} processados` : "—";
-  return `${done}/${total}`;
+  const doneText = ptBRNumber.format(done);
+  if (total === null) return done > 0 ? `${doneText} processados` : "—";
+  return `${doneText}/${ptBRNumber.format(total)}`;
 }
 
 export const PHASES: readonly PhaseMeta[] = [

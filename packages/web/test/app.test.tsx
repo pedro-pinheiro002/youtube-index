@@ -29,10 +29,10 @@ describe("App", () => {
     expect(createChannel).toHaveBeenCalledWith("@funkyblackcat");
 
     await waitFor(() => {
-      expect(screen.getByText(/status: Ingerindo/)).toBeInTheDocument();
+      expect(screen.getByText(/— Ingerindo/)).toBeInTheDocument();
     });
     await waitFor(() => {
-      expect(screen.getByText(/status: Concluído/)).toBeInTheDocument();
+      expect(screen.getByText(/— Concluído/)).toBeInTheDocument();
     });
 
     expect(getChannel).toHaveBeenCalledTimes(2);

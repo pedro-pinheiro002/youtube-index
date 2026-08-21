@@ -41,6 +41,11 @@ describe("formatProgress", () => {
   it("mostra contagem parcial quando total é desconhecido e done > 0", () => {
     expect(formatProgress(5, null)).toBe("5 processados");
   });
+
+  it("formata números >= 1000 com separador de milhar pt-BR", () => {
+    expect(formatProgress(1234, 5678)).toBe("1.234/5.678");
+    expect(formatProgress(1500, null)).toBe("1.500 processados");
+  });
 });
 
 describe("describe por Fase", () => {
