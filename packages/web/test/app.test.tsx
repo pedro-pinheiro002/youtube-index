@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { App } from "../src/App";
@@ -85,8 +85,9 @@ describe("App", () => {
     await user.type(screen.getByLabelText("@handle do Canal"), "@funkyblackcat");
     await user.click(screen.getByRole("button", { name: "Ingerir Canal" }));
 
-    await user.type(await screen.findByLabelText("Buscar"), "gato");
-    await user.click(screen.getByRole("button", { name: "Buscar" }));
+    const searchInput = await screen.findByLabelText("Buscar");
+    await user.type(searchInput, "gato");
+    fireEvent.keyDown(searchInput, { key: "Enter" });
 
     await waitFor(() => {
       expect(searchChannel).toHaveBeenCalledWith({
