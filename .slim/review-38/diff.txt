@@ -1,0 +1,903 @@
+diff --git a/packages/web/src/SearchView.tsx b/packages/web/src/SearchView.tsx
+index 82d8375..7b27a32 100644
+--- a/packages/web/src/SearchView.tsx
++++ b/packages/web/src/SearchView.tsx
+@@ -1,8 +1,20 @@
+ import type { SearchSort, TipoFilter } from "./types";
+ import { SEARCH_SORT_LABELS, SEARCH_TIPO_LABELS } from "./types";
+ import { SearchHitCard } from "./SearchHitCard";
+-import { useSearch } from "./useSearch";
+ import type { SearchApi } from "./useSearch";
++import { useSearch } from "./useSearch";
++import { useMediaQuery } from "./useMediaQuery";
++import { Button } from "./components/ui/button";
++import { Input } from "./components/ui/input";
++import {
++  DropdownMenu,
++  DropdownMenuContent,
++  DropdownMenuItem,
++  DropdownMenuTrigger,
++} from "./components/ui/dropdown-menu";
++import { cn } from "./lib/utils";
++
++const SM_QUERY = "(min-width: 640px)";
+ 
+ export interface SearchViewProps {
+   channelId: string;
+@@ -10,79 +22,125 @@ export interface SearchViewProps {
+ }
+ 
+ export function SearchView({ channelId, api }: SearchViewProps) {
+-  const { query, setQuery, tipo, setTipo, sort, setSort, submit, clear, results, searching, error, hasSearched } =
+-    useSearch({ channelId, api });
++  const {
++    query,
++    setQuery,
++    tipo,
++    setTipo,
++    sort,
++    setSort,
++    submit,
++    clear,
++    results,
++    searching,
++    error,
++    hasSearched,
++  } = useSearch({ channelId, api });
++  const isWide = useMediaQuery(SM_QUERY);
++
++  const tipoEntries = Object.entries(SEARCH_TIPO_LABELS) as [TipoFilter, string][];
++  const sortEntries = Object.entries(SEARCH_SORT_LABELS) as [SearchSort, string][];
++  const showEmptyState = results !== null && results.total === 0;
++  const submittedQuery = results?.query ?? "";
+ 
+   return (
+-    <section aria-label="Busca">
+-      <h2>Busca</h2>
+-      <form
+-        onSubmit={(event) => {
+-          event.preventDefault();
+-          submit();
+-        }}
+-      >
+-        <label htmlFor="search-query">Buscar</label>
+-        <input
+-          id="search-query"
+-          type="search"
+-          value={query}
+-          onChange={(event) => setQuery(event.target.value)}
+-          onKeyDown={(event) => {
+-            if (event.key === "Escape") {
+-              event.preventDefault();
+-              clear();
+-            }
++    <section aria-label="Busca" className="space-y-4">
++      <h2 className="sr-only">Busca</h2>
++
++      <div className="sticky top-0 z-10 -mx-4 bg-zinc-950/80 px-4 py-3 backdrop-blur-md light:bg-zinc-50/80 sm:-mx-6 sm:px-6 md:-mx-8 md:px-8">
++        <form
++          onSubmit={(event) => {
++            event.preventDefault();
++            submit();
+           }}
+-          placeholder="palavra-chave"
+-        />
+-        <button type="submit" disabled={searching || query.trim() === ""}>
+-          {searching ? "Buscando..." : "Buscar"}
+-        </button>
+-      </form>
++        >
++          <label htmlFor="search-query" className="sr-only">
++            Buscar
++          </label>
++          <Input
++            id="search-query"
++            type="search"
++            value={query}
++            onChange={(event) => setQuery(event.target.value)}
++            onKeyDown={(event) => {
++              if (event.key === "Escape") {
++                event.preventDefault();
++                clear();
++              }
++            }}
++            placeholder="palavra-chave"
++          />
++        </form>
++        {searching && (
++          <p aria-live="polite" className="mt-2 font-mono text-xs text-muted-foreground">
++            buscando…
++          </p>
++        )}
++      </div>
+ 
+-      <label htmlFor="search-tipo">Tipo</label>
+-      <select
+-        id="search-tipo"
+-        value={tipo}
+-        onChange={(event) => setTipo(event.target.value as TipoFilter)}
++      <div
++        role="group"
++        aria-label="Tipo"
++        className={cn(isWide ? "flex flex-row gap-1" : "grid grid-cols-2 gap-2")}
+       >
+-        {(Object.keys(SEARCH_TIPO_LABELS) as TipoFilter[]).map((key) => (
+-          <option key={key} value={key}>
+-            {SEARCH_TIPO_LABELS[key]}
+-          </option>
+-        ))}
+-      </select>
++        {tipoEntries.map(([key, label]) => {
++          const active = tipo === key;
++          return (
++            <Button
++              key={key}
++              type="button"
++              variant={active ? "default" : "outline"}
++              aria-pressed={active}
++              onClick={() => setTipo(key)}
++              className="flex-1"
++            >
++              {label}
++            </Button>
++          );
++        })}
++      </div>
+ 
+-      <label htmlFor="search-sort">Ordenar por</label>
+-      <select
+-        id="search-sort"
+-        value={sort}
+-        onChange={(event) => setSort(event.target.value as SearchSort)}
+-      >
+-        {(Object.keys(SEARCH_SORT_LABELS) as SearchSort[]).map((key) => (
+-          <option key={key} value={key}>
+-            {SEARCH_SORT_LABELS[key]}
+-          </option>
+-        ))}
+-      </select>
++      <div className="flex items-center justify-between gap-2">
++        <span className="text-sm text-muted-foreground">Ordenar por</span>
++        <DropdownMenu>
++          <DropdownMenuTrigger
++            aria-label={`Ordenar por: ${SEARCH_SORT_LABELS[sort]}`}
++            className="inline-flex h-8 items-center justify-between gap-1 rounded-md border border-input bg-background px-3 text-sm font-medium shadow-sm hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
++          >
++            <span>{SEARCH_SORT_LABELS[sort]}</span>
++            <span aria-hidden="true" className="text-xs text-muted-foreground">▾</span>
++          </DropdownMenuTrigger>
++          <DropdownMenuContent align="end">
++            {sortEntries.map(([key, label]) => (
++              <DropdownMenuItem key={key} onClick={() => setSort(key)}>
++                {label}
++              </DropdownMenuItem>
++            ))}
++          </DropdownMenuContent>
++        </DropdownMenu>
++      </div>
+ 
+-      {error && <p role="alert">{error}</p>}
++      {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+ 
+-      {hasSearched && results && (
+-        <p>
+-          {results.total} {results.total === 1 ? "resultado" : "resultados"} para “{results.query}”
++      {showEmptyState && (
++        <p className="text-sm text-muted-foreground">
++          Nenhum Documento encontrado para &quot;{submittedQuery}&quot;
+         </p>
+       )}
+ 
+-      {results && (
+-        <ul>
+-          {results.hits.map((hit) => (
+-            <li key={hit.id}>
+-              <SearchHitCard hit={hit} />
+-            </li>
+-          ))}
+-        </ul>
++      {hasSearched && results && results.total > 0 && (
++        <>
++          <p className="text-sm text-muted-foreground">
++            {results.total} {results.total === 1 ? "Documento" : "Documentos"} para &quot;{results.query}&quot;
++          </p>
++          <ul className="space-y-2">
++            {results.hits.map((hit) => (
++              <li key={hit.id} className="rounded-lg border border-border bg-card">
++                <SearchHitCard hit={hit} />
++              </li>
++            ))}
++          </ul>
++        </>
+       )}
+     </section>
+   );
+diff --git a/packages/web/src/components/ui/dropdown-menu.tsx b/packages/web/src/components/ui/dropdown-menu.tsx
+new file mode 100644
+index 0000000..208b13b
+--- /dev/null
++++ b/packages/web/src/components/ui/dropdown-menu.tsx
+@@ -0,0 +1,266 @@
++import * as React from "react"
++import { Menu as MenuPrimitive } from "@base-ui/react/menu"
++
++import { cn } from "@/lib/utils"
++import { ChevronRightIcon, CheckIcon } from "lucide-react"
++
++function DropdownMenu({ ...props }: MenuPrimitive.Root.Props) {
++  return <MenuPrimitive.Root data-slot="dropdown-menu" {...props} />
++}
++
++function DropdownMenuPortal({ ...props }: MenuPrimitive.Portal.Props) {
++  return <MenuPrimitive.Portal data-slot="dropdown-menu-portal" {...props} />
++}
++
++function DropdownMenuTrigger({ ...props }: MenuPrimitive.Trigger.Props) {
++  return <MenuPrimitive.Trigger data-slot="dropdown-menu-trigger" {...props} />
++}
++
++function DropdownMenuContent({
++  align = "start",
++  alignOffset = 0,
++  side = "bottom",
++  sideOffset = 4,
++  className,
++  ...props
++}: MenuPrimitive.Popup.Props &
++  Pick<
++    MenuPrimitive.Positioner.Props,
++    "align" | "alignOffset" | "side" | "sideOffset"
++  >) {
++  return (
++    <MenuPrimitive.Portal>
++      <MenuPrimitive.Positioner
++        className="isolate z-50 outline-none"
++        align={align}
++        alignOffset={alignOffset}
++        side={side}
++        sideOffset={sideOffset}
++      >
++        <MenuPrimitive.Popup
++          data-slot="dropdown-menu-content"
++          className={cn("z-50 max-h-(--available-height) w-(--anchor-width) min-w-32 origin-(--transform-origin) overflow-x-hidden overflow-y-auto rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10 duration-100 outline-none data-[side=bottom]:slide-in-from-top-2 data-[side=inline-end]:slide-in-from-left-2 data-[side=inline-start]:slide-in-from-right-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:overflow-hidden data-closed:fade-out-0 data-closed:zoom-out-95", className )}
++          {...props}
++        />
++      </MenuPrimitive.Positioner>
++    </MenuPrimitive.Portal>
++  )
++}
++
++function DropdownMenuGroup({ ...props }: MenuPrimitive.Group.Props) {
++  return <MenuPrimitive.Group data-slot="dropdown-menu-group" {...props} />
++}
++
++function DropdownMenuLabel({
++  className,
++  inset,
++  ...props
++}: MenuPrimitive.GroupLabel.Props & {
++  inset?: boolean
++}) {
++  return (
++    <MenuPrimitive.GroupLabel
++      data-slot="dropdown-menu-label"
++      data-inset={inset}
++      className={cn(
++        "px-1.5 py-1 text-xs font-medium text-muted-foreground data-inset:pl-7",
++        className
++      )}
++      {...props}
++    />
++  )
++}
++
++function DropdownMenuItem({
++  className,
++  inset,
++  variant = "default",
++  ...props
++}: MenuPrimitive.Item.Props & {
++  inset?: boolean
++  variant?: "default" | "destructive"
++}) {
++  return (
++    <MenuPrimitive.Item
++      data-slot="dropdown-menu-item"
++      data-inset={inset}
++      data-variant={variant}
++      className={cn(
++        "group/dropdown-menu-item relative flex cursor-default items-center gap-1.5 rounded-md px-1.5 py-1 text-sm outline-hidden select-none focus:bg-accent focus:text-accent-foreground not-data-[variant=destructive]:focus:**:text-accent-foreground data-inset:pl-7 data-[variant=destructive]:text-destructive data-[variant=destructive]:focus:bg-destructive/10 data-[variant=destructive]:focus:text-destructive dark:data-[variant=destructive]:focus:bg-destructive/20 data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 data-[variant=destructive]:*:[svg]:text-destructive",
++        className
++      )}
++      {...props}
++    />
++  )
++}
++
++function DropdownMenuSub({ ...props }: MenuPrimitive.SubmenuRoot.Props) {
++  return <MenuPrimitive.SubmenuRoot data-slot="dropdown-menu-sub" {...props} />
++}
++
++function DropdownMenuSubTrigger({
++  className,
++  inset,
++  children,
++  ...props
++}: MenuPrimitive.SubmenuTrigger.Props & {
++  inset?: boolean
++}) {
++  return (
++    <MenuPrimitive.SubmenuTrigger
++      data-slot="dropdown-menu-sub-trigger"
++      data-inset={inset}
++      className={cn(
++        "flex cursor-default items-center gap-1.5 rounded-md px-1.5 py-1 text-sm outline-hidden select-none focus:bg-accent focus:text-accent-foreground not-data-[variant=destructive]:focus:**:text-accent-foreground data-inset:pl-7 data-popup-open:bg-accent data-popup-open:text-accent-foreground data-open:bg-accent data-open:text-accent-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
++        className
++      )}
++      {...props}
++    >
++      {children}
++      <ChevronRightIcon className="ml-auto" />
++    </MenuPrimitive.SubmenuTrigger>
++  )
++}
++
++function DropdownMenuSubContent({
++  align = "start",
++  alignOffset = -3,
++  side = "right",
++  sideOffset = 0,
++  className,
++  ...props
++}: React.ComponentProps<typeof DropdownMenuContent>) {
++  return (
++    <DropdownMenuContent
++      data-slot="dropdown-menu-sub-content"
++      className={cn("w-auto min-w-[96px] rounded-lg bg-popover p-1 text-popover-foreground shadow-lg ring-1 ring-foreground/10 duration-100 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95", className )}
++      align={align}
++      alignOffset={alignOffset}
++      side={side}
++      sideOffset={sideOffset}
++      {...props}
++    />
++  )
++}
++
++function DropdownMenuCheckboxItem({
++  className,
++  children,
++  checked,
++  inset,
++  ...props
++}: MenuPrimitive.CheckboxItem.Props & {
++  inset?: boolean
++}) {
++  return (
++    <MenuPrimitive.CheckboxItem
++      data-slot="dropdown-menu-checkbox-item"
++      data-inset={inset}
++      className={cn(
++        "relative flex cursor-default items-center gap-1.5 rounded-md py-1 pr-8 pl-1.5 text-sm outline-hidden select-none focus:bg-accent focus:text-accent-foreground focus:**:text-accent-foreground data-inset:pl-7 data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
++        className
++      )}
++      checked={checked}
++      {...props}
++    >
++      <span
++        className="pointer-events-none absolute right-2 flex items-center justify-center"
++        data-slot="dropdown-menu-checkbox-item-indicator"
++      >
++        <MenuPrimitive.CheckboxItemIndicator>
++          <CheckIcon
++          />
++        </MenuPrimitive.CheckboxItemIndicator>
++      </span>
++      {children}
++    </MenuPrimitive.CheckboxItem>
++  )
++}
++
++function DropdownMenuRadioGroup({ ...props }: MenuPrimitive.RadioGroup.Props) {
++  return (
++    <MenuPrimitive.RadioGroup
++      data-slot="dropdown-menu-radio-group"
++      {...props}
++    />
++  )
++}
++
++function DropdownMenuRadioItem({
++  className,
++  children,
++  inset,
++  ...props
++}: MenuPrimitive.RadioItem.Props & {
++  inset?: boolean
++}) {
++  return (
++    <MenuPrimitive.RadioItem
++      data-slot="dropdown-menu-radio-item"
++      data-inset={inset}
++      className={cn(
++        "relative flex cursor-default items-center gap-1.5 rounded-md py-1 pr-8 pl-1.5 text-sm outline-hidden select-none focus:bg-accent focus:text-accent-foreground focus:**:text-accent-foreground data-inset:pl-7 data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
++        className
++      )}
++      {...props}
++    >
++      <span
++        className="pointer-events-none absolute right-2 flex items-center justify-center"
++        data-slot="dropdown-menu-radio-item-indicator"
++      >
++        <MenuPrimitive.RadioItemIndicator>
++          <CheckIcon
++          />
++        </MenuPrimitive.RadioItemIndicator>
++      </span>
++      {children}
++    </MenuPrimitive.RadioItem>
++  )
++}
++
++function DropdownMenuSeparator({
++  className,
++  ...props
++}: MenuPrimitive.Separator.Props) {
++  return (
++    <MenuPrimitive.Separator
++      data-slot="dropdown-menu-separator"
++      className={cn("-mx-1 my-1 h-px bg-border", className)}
++      {...props}
++    />
++  )
++}
++
++function DropdownMenuShortcut({
++  className,
++  ...props
++}: React.ComponentProps<"span">) {
++  return (
++    <span
++      data-slot="dropdown-menu-shortcut"
++      className={cn(
++        "ml-auto text-xs tracking-widest text-muted-foreground group-focus/dropdown-menu-item:text-accent-foreground",
++        className
++      )}
++      {...props}
++    />
++  )
++}
++
++export {
++  DropdownMenu,
++  DropdownMenuPortal,
++  DropdownMenuTrigger,
++  DropdownMenuContent,
++  DropdownMenuGroup,
++  DropdownMenuLabel,
++  DropdownMenuItem,
++  DropdownMenuCheckboxItem,
++  DropdownMenuRadioGroup,
++  DropdownMenuRadioItem,
++  DropdownMenuSeparator,
++  DropdownMenuShortcut,
++  DropdownMenuSub,
++  DropdownMenuSubTrigger,
++  DropdownMenuSubContent,
++}
+diff --git a/packages/web/src/useMediaQuery.ts b/packages/web/src/useMediaQuery.ts
+new file mode 100644
+index 0000000..c7f8656
+--- /dev/null
++++ b/packages/web/src/useMediaQuery.ts
+@@ -0,0 +1,24 @@
++import { useSyncExternalStore } from "react";
++
++export function useMediaQuery(query: string): boolean {
++  return useSyncExternalStore(
++    (notify) => {
++      if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
++        return () => {};
++      }
++      const mediaQuery = window.matchMedia(query);
++      const handleChange = () => notify();
++      mediaQuery.addEventListener("change", handleChange);
++      return () => {
++        mediaQuery.removeEventListener("change", handleChange);
++      };
++    },
++    () => {
++      if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
++        return false;
++      }
++      return window.matchMedia(query).matches;
++    },
++    () => false,
++  );
++}
+diff --git a/packages/web/test/SearchView.test.tsx b/packages/web/test/SearchView.test.tsx
+index 9b15dae..df2f4aa 100644
+--- a/packages/web/test/SearchView.test.tsx
++++ b/packages/web/test/SearchView.test.tsx
+@@ -1,6 +1,7 @@
+ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+ import userEvent from "@testing-library/user-event";
+-import { describe, expect, it, vi } from "vitest";
++import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
++import type { SearchResponse } from "../src/types";
+ import { SearchView } from "../src/SearchView";
+ import {
+   makeCommentHit,
+@@ -12,8 +13,30 @@ import {
+ 
+ const CHANNEL_ID = "UCY8iijN1AkyDCh1Z9akcqUA";
+ 
++function installMatchMedia(matches: boolean) {
++  const matchMedia = vi.fn().mockReturnValue({
++    matches,
++    media: "",
++    addEventListener: () => {},
++    removeEventListener: () => {},
++  });
++  window.matchMedia = matchMedia as unknown as typeof window.matchMedia;
++  return matchMedia;
++}
++
++beforeEach(() => {
++  // Default to "small viewport" so the segmented control renders in the 2x2
++  // grid layout. Tests that need the inline flex layout override this.
++  installMatchMedia(false);
++});
++
++afterEach(() => {
++  // eslint-disable-next-line @typescript-eslint/no-explicit-any
++  delete (window as any).matchMedia;
++});
++
+ describe("SearchView", () => {
+-  it("busca por palavra-chave em uma barra única e mostra resultados de todos os tipos", async () => {
++  it("busca por palavra-chave e mostra resultados de todos os tipos", async () => {
+     const user = userEvent.setup();
+     const searchChannel = vi.fn().mockResolvedValue(
+       makeSearchResponse({
+@@ -24,26 +47,68 @@ describe("SearchView", () => {
+     );
+     render(<SearchView channelId={CHANNEL_ID} api={makeSearchApi({ searchChannel })} />);
+ 
+-    await user.type(screen.getByLabelText("Buscar"), "vídeo");
+-    await user.click(screen.getByRole("button", { name: "Buscar" }));
++    const input = screen.getByLabelText("Buscar");
++    await user.type(input, "vídeo");
++    fireEvent.keyDown(input, { key: "Enter" });
+ 
+     expect(await screen.findAllByRole("link", { name: "Primeiro vídeo" })).toHaveLength(3);
+     expect(screen.getByText("Gato Funky · 02/01/2026 · 12 curtidas")).toBeInTheDocument();
+     expect(screen.getByText("2:22 · 03/01/2026 · 1.234 visualizações · 56 curtidas")).toBeInTheDocument();
+-    expect(screen.getByText(/3 resultados/)).toBeInTheDocument();
++    expect(screen.getByText(/3 Documentos/)).toBeInTheDocument();
+     expect(searchChannel).toHaveBeenCalledWith({ q: "vídeo", channelId: CHANNEL_ID, sort: "relevance" });
+   });
+ 
+-  it("filtrar por tipo re-executa a busca com o filtro", async () => {
++  it("renderiza o input dentro de um container sticky com backdrop-blur", () => {
++    render(<SearchView channelId={CHANNEL_ID} api={makeSearchApi()} />);
++
++    const input = screen.getByLabelText("Buscar");
++    // The sticky wrapper is the closest ancestor carrying the sticky/background
++    // utility classes. Walking up via the DOM is more stable than querying by
++    // role, since the wrapper has no semantic role.
++    let wrapper: HTMLElement | null = input.parentElement;
++    while (wrapper && !wrapper.className.includes("sticky")) {
++      wrapper = wrapper.parentElement;
++    }
++    expect(wrapper).not.toBeNull();
++    expect(wrapper).toHaveClass("sticky");
++    expect(wrapper).toHaveClass("top-0");
++    expect(wrapper).toHaveClass("z-10");
++    expect(wrapper).toHaveClass("backdrop-blur-md");
++    expect(wrapper).toHaveClass("bg-zinc-950/80");
++    expect(wrapper).toHaveClass("light:bg-zinc-50/80");
++  });
++
++  it("exibe o filtro Tipo como segmented control com 4 opções e destaca o ativo em violeta", () => {
++    render(<SearchView channelId={CHANNEL_ID} api={makeSearchApi()} />);
++
++    const group = screen.getByRole("group", { name: "Tipo" });
++    expect(group).toBeInTheDocument();
++    const allButton = screen.getByRole("button", { name: "Todos" });
++    const videoButton = screen.getByRole("button", { name: "Vídeo" });
++    const commentButton = screen.getByRole("button", { name: "Comentário" });
++    const segmentButton = screen.getByRole("button", { name: "Transcrição" });
++
++    expect(allButton).toHaveAttribute("aria-pressed", "true");
++    expect(videoButton).toHaveAttribute("aria-pressed", "false");
++    expect(commentButton).toHaveAttribute("aria-pressed", "false");
++    expect(segmentButton).toHaveAttribute("aria-pressed", "false");
++
++    // The active button uses the default (violet) variant.
++    expect(allButton.className).toMatch(/bg-primary/);
++    expect(videoButton.className).not.toMatch(/bg-primary/);
++  });
++
++  it("trocar o tipo re-executa a busca com o filtro do tipo", async () => {
+     const user = userEvent.setup();
+     const searchChannel = vi.fn().mockResolvedValue(makeSearchResponse());
+     render(<SearchView channelId={CHANNEL_ID} api={makeSearchApi({ searchChannel })} />);
+ 
+-    await user.type(screen.getByLabelText("Buscar"), "gato");
+-    await user.click(screen.getByRole("button", { name: "Buscar" }));
++    const input = screen.getByLabelText("Buscar");
++    await user.type(input, "gato");
++    fireEvent.keyDown(input, { key: "Enter" });
+     await waitFor(() => expect(searchChannel).toHaveBeenCalledTimes(1));
+ 
+-    await user.selectOptions(screen.getByLabelText("Tipo"), "comment");
++    await user.click(screen.getByRole("button", { name: "Comentário" }));
+     await waitFor(() => expect(searchChannel).toHaveBeenCalledTimes(2));
+ 
+     expect(searchChannel.mock.calls[1]?.[0]).toEqual({
+@@ -52,18 +117,44 @@ describe("SearchView", () => {
+       tipo: "comment",
+       sort: "relevance",
+     });
++    expect(screen.getByRole("button", { name: "Comentário" })).toHaveAttribute("aria-pressed", "true");
++    expect(screen.getByRole("button", { name: "Todos" })).toHaveAttribute("aria-pressed", "false");
++  });
++
++  it("layout do segmented control usa grid 2x2 abaixo de sm e flex inline a partir de sm", () => {
++    const { rerender } = render(<SearchView channelId={CHANNEL_ID} api={makeSearchApi()} />);
++    expect(screen.getByRole("group", { name: "Tipo" }).className).toMatch(/grid-cols-2/);
++
++    installMatchMedia(true);
++    rerender(<SearchView channelId={CHANNEL_ID} api={makeSearchApi()} />);
++    expect(screen.getByRole("group", { name: "Tipo" }).className).toMatch(/flex/);
++    expect(screen.getByRole("group", { name: "Tipo" }).className).not.toMatch(/grid-cols-2/);
+   });
+ 
+-  it("ordenar por data re-executa a busca com a ordenação", async () => {
++  it("exibe Ordenar por como dropdown do shadcn", async () => {
++    const user = userEvent.setup();
++    render(<SearchView channelId={CHANNEL_ID} api={makeSearchApi()} />);
++
++    const trigger = screen.getByRole("button", { name: /Ordenar por/ });
++    expect(trigger).toHaveAttribute("aria-haspopup", "menu");
++
++    await user.click(trigger);
++    expect(await screen.findByRole("menuitem", { name: "Relevância" })).toBeInTheDocument();
++    expect(screen.getByRole("menuitem", { name: "Data de publicação" })).toBeInTheDocument();
++  });
++
++  it("trocar a ordenação pelo dropdown re-executa a busca com a nova ordenação", async () => {
+     const user = userEvent.setup();
+     const searchChannel = vi.fn().mockResolvedValue(makeSearchResponse());
+     render(<SearchView channelId={CHANNEL_ID} api={makeSearchApi({ searchChannel })} />);
+ 
+-    await user.type(screen.getByLabelText("Buscar"), "gato");
+-    await user.click(screen.getByRole("button", { name: "Buscar" }));
++    const input = screen.getByLabelText("Buscar");
++    await user.type(input, "gato");
++    fireEvent.keyDown(input, { key: "Enter" });
+     await waitFor(() => expect(searchChannel).toHaveBeenCalledTimes(1));
+ 
+-    await user.selectOptions(screen.getByLabelText("Ordenar por"), "publishedAt");
++    await user.click(screen.getByRole("button", { name: /Ordenar por/ }));
++    await user.click(await screen.findByRole("menuitem", { name: "Data de publicação" }));
+     await waitFor(() => expect(searchChannel).toHaveBeenCalledTimes(2));
+ 
+     expect(searchChannel.mock.calls[1]?.[0]).toEqual({
+@@ -78,16 +169,52 @@ describe("SearchView", () => {
+     const searchChannel = vi.fn().mockRejectedValue(new Error("Canal não encontrado"));
+     render(<SearchView channelId={CHANNEL_ID} api={makeSearchApi({ searchChannel })} />);
+ 
+-    await user.type(screen.getByLabelText("Buscar"), "gato");
+-    await user.click(screen.getByRole("button", { name: "Buscar" }));
++    const input = screen.getByLabelText("Buscar");
++    await user.type(input, "gato");
++    fireEvent.keyDown(input, { key: "Enter" });
+ 
+     expect(await screen.findByRole("alert")).toHaveTextContent("Canal não encontrado");
+   });
+ 
+-  it("desabilita o botão de Buscar com consulta vazia", () => {
+-    render(<SearchView channelId={CHANNEL_ID} api={makeSearchApi()} />);
++  it("renderiza estado vazio quando o total de resultados é zero", async () => {
++    const user = userEvent.setup();
++    const searchChannel = vi
++      .fn()
++      .mockResolvedValue(makeSearchResponse({ hits: [], total: 0, query: "gato" }));
++    render(<SearchView channelId={CHANNEL_ID} api={makeSearchApi({ searchChannel })} />);
++
++    const input = screen.getByLabelText("Buscar");
++    await user.type(input, "gato");
++    fireEvent.keyDown(input, { key: "Enter" });
++
++    expect(
++      await screen.findByText((content) => content.includes("Nenhum Documento encontrado para")),
++    ).toHaveTextContent('Nenhum Documento encontrado para "gato"');
++    expect(screen.queryByRole("link", { name: "Primeiro vídeo" })).not.toBeInTheDocument();
++  });
++
++  it("mostra 'buscando…' em fonte mono sob o input durante o fetch", async () => {
++    let resolveSearch!: (value: SearchResponse) => void;
++    const searchChannel = vi.fn().mockImplementation(
++      () =>
++        new Promise<SearchResponse>((resolve) => {
++          resolveSearch = resolve;
++        }),
++    );
++    render(<SearchView channelId={CHANNEL_ID} api={makeSearchApi({ searchChannel })} />);
++
++    const user = userEvent.setup();
++    const input = screen.getByLabelText("Buscar");
++    await user.type(input, "gato");
++    fireEvent.keyDown(input, { key: "Enter" });
++
++    const indicator = await screen.findByText("buscando…");
++    expect(indicator).toBeInTheDocument();
++    expect(indicator).toHaveClass("font-mono");
+ 
+-    expect(screen.getByRole("button", { name: "Buscar" })).toBeDisabled();
++    // Resolve the in-flight fetch; the indicator must disappear.
++    resolveSearch(makeSearchResponse({ hits: [], total: 0, query: "gato" }));
++    await waitFor(() => expect(screen.queryByText("buscando…")).not.toBeInTheDocument());
+   });
+ 
+   it("Esc no input limpa o campo e os resultados exibidos", async () => {
+@@ -99,7 +226,7 @@ describe("SearchView", () => {
+ 
+     const input = screen.getByLabelText("Buscar");
+     await user.type(input, "gato");
+-    await user.click(screen.getByRole("button", { name: "Buscar" }));
++    fireEvent.keyDown(input, { key: "Enter" });
+ 
+     expect(await screen.findByRole("link", { name: "Primeiro vídeo" })).toBeInTheDocument();
+     expect(input).toHaveValue("gato");
+diff --git a/packages/web/test/app.test.tsx b/packages/web/test/app.test.tsx
+index 44e8733..8e84fa2 100644
+--- a/packages/web/test/app.test.tsx
++++ b/packages/web/test/app.test.tsx
+@@ -1,4 +1,4 @@
+-import { render, screen, waitFor } from "@testing-library/react";
++import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+ import userEvent from "@testing-library/user-event";
+ import { describe, expect, it, vi } from "vitest";
+ import { App } from "../src/App";
+@@ -85,8 +85,9 @@ describe("App", () => {
+     await user.type(screen.getByLabelText("@handle do Canal"), "@funkyblackcat");
+     await user.click(screen.getByRole("button", { name: "Ingerir Canal" }));
+ 
+-    await user.type(await screen.findByLabelText("Buscar"), "gato");
+-    await user.click(screen.getByRole("button", { name: "Buscar" }));
++    const searchInput = await screen.findByLabelText("Buscar");
++    await user.type(searchInput, "gato");
++    fireEvent.keyDown(searchInput, { key: "Enter" });
+ 
+     await waitFor(() => {
+       expect(searchChannel).toHaveBeenCalledWith({
+diff --git a/packages/web/test/useMediaQuery.test.tsx b/packages/web/test/useMediaQuery.test.tsx
+new file mode 100644
+index 0000000..b94ae0c
+--- /dev/null
++++ b/packages/web/test/useMediaQuery.test.tsx
+@@ -0,0 +1,122 @@
++import { act, renderHook } from "@testing-library/react";
++import { afterEach, describe, expect, it, vi } from "vitest";
++import { useMediaQuery } from "../src/useMediaQuery";
++
++type Listener = (event: MediaQueryListEvent) => void;
++
++interface MediaQueryStub {
++  matches: boolean;
++  media: string;
++  addEventListener: ReturnType<typeof vi.fn>;
++  removeEventListener: ReturnType<typeof vi.fn>;
++  dispatch: (nextMatches: boolean) => void;
++}
++
++function installMatchMedia(): {
++  setMatch: (query: string, matches: boolean) => void;
++  installQuery: (query: string, initialMatches: boolean) => MediaQueryStub;
++} {
++  const stubs = new Map<string, MediaQueryStub>();
++  const matchMedia = vi.fn((query: string): MediaQueryList => {
++    const existing = stubs.get(query);
++    if (existing) {
++      return existing as unknown as MediaQueryList;
++    }
++    const listeners = new Set<Listener>();
++    const stub: MediaQueryStub = {
++      matches: false,
++      media: query,
++      addEventListener: vi.fn((event: string, listener: Listener) => {
++        if (event === "change") {
++          listeners.add(listener);
++        }
++      }),
++      removeEventListener: vi.fn((event: string, listener: Listener) => {
++        if (event === "change") {
++          listeners.delete(listener);
++        }
++      }),
++      dispatch: (nextMatches: boolean) => {
++        stub.matches = nextMatches;
++        const event = { matches: nextMatches, media: query } as MediaQueryListEvent;
++        listeners.forEach((listener) => listener(event));
++      },
++    };
++    stubs.set(query, stub);
++    return stub as unknown as MediaQueryList;
++  });
++  window.matchMedia = matchMedia as unknown as typeof window.matchMedia;
++
++  return {
++    setMatch: (query: string, matches: boolean) => {
++      const stub = stubs.get(query);
++      if (!stub) {
++        throw new Error(`No matchMedia stub registered for query: ${query}`);
++      }
++      stub.dispatch(matches);
++    },
++    installQuery: (query: string, initialMatches: boolean) => {
++      const stub = stubs.get(query);
++      if (stub) {
++        stub.matches = initialMatches;
++        return stub;
++      }
++      const fresh = matchMedia(query);
++      // Cast through `unknown` because MediaQueryListStub is structural and
++      // only narrows to MediaQueryList for the getSnapshot / subscribe contract.
++      (fresh as unknown as MediaQueryStub).matches = initialMatches;
++      return stubs.get(query)!;
++    },
++  };
++}
++
++afterEach(() => {
++  // jsdom does not ship matchMedia; reset to undefined so each test installs
++  // a fresh stub set.
++  // eslint-disable-next-line @typescript-eslint/no-explicit-any
++  delete (window as any).matchMedia;
++});
++
++describe("useMediaQuery", () => {
++  it("retorna o estado atual de matchMedia para a query informada", () => {
++    const mq = installMatchMedia();
++    mq.installQuery("(min-width: 640px)", true);
++
++    const { result } = renderHook(() => useMediaQuery("(min-width: 640px)"));
++
++    expect(result.current).toBe(true);
++  });
++
++  it("atualiza o estado quando a media query muda", () => {
++    const mq = installMatchMedia();
++    mq.installQuery("(min-width: 640px)", false);
++
++    const { result } = renderHook(() => useMediaQuery("(min-width: 640px)"));
++    expect(result.current).toBe(false);
++
++    act(() => {
++      mq.setMatch("(min-width: 640px)", true);
++    });
++
++    expect(result.current).toBe(true);
++  });
++
++  it("remove o listener ao desmontar", () => {
++    const mq = installMatchMedia();
++    const stub = mq.installQuery("(min-width: 640px)", true);
++
++    const { unmount } = renderHook(() => useMediaQuery("(min-width: 640px)"));
++    expect(stub.addEventListener).toHaveBeenCalledWith("change", expect.any(Function));
++
++    unmount();
++
++    expect(stub.removeEventListener).toHaveBeenCalledWith("change", expect.any(Function));
++  });
++
++  it("retorna false quando matchMedia não está disponível", () => {
++    // window.matchMedia is deleted in afterEach; the lazy initializer also
++    // falls back to false.
++    const { result } = renderHook(() => useMediaQuery("(min-width: 640px)"));
++    expect(result.current).toBe(false);
++  });
++});
