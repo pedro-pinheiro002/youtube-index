@@ -27,9 +27,9 @@ function makeRecordingProjection() {
   };
 }
 
-function makeChannelWithVideo(ledger: SqliteLedger) {
-  ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
-  ledger.upsertVideo({
+async function makeChannelWithVideo(ledger: SqliteLedger) {
+  await ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
+  await ledger.upsertVideo({
     id: "v1",
     channelId: CHANNEL_ID,
     title: "Primeiro vídeo",
@@ -44,8 +44,8 @@ function makeChannelWithVideo(ledger: SqliteLedger) {
 describe("rebuildVideosProjection", () => {
   it("reconstrói a Projeção de Vídeos a partir do SQLite sem chamar o YouTube", async () => {
     const ledger = makeLedger();
-    ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
-    ledger.upsertVideo({
+    await ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
+    await ledger.upsertVideo({
       id: "v1",
       channelId: CHANNEL_ID,
       title: "Primeiro vídeo",
@@ -84,7 +84,7 @@ describe("rebuildVideosProjection", () => {
 
   it("devolve 0 sem chamar a Projeção quando o Canal não tem Vídeos", async () => {
     const ledger = makeLedger();
-    ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
+    await ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
     const projection = makeRecordingProjection();
 
     const count = await rebuildVideosProjection(CHANNEL_ID, { ledger, projection });
@@ -97,8 +97,8 @@ describe("rebuildVideosProjection", () => {
 describe("rebuildCommentsProjection", () => {
   it("reconstrói a Projeção de Comentários a partir do SQLite sem chamar o YouTube", async () => {
     const ledger = makeLedger();
-    makeChannelWithVideo(ledger);
-    ledger.upsertComment({
+    await makeChannelWithVideo(ledger);
+    await ledger.upsertComment({
       id: "c1",
       videoId: "v1",
       channelId: CHANNEL_ID,
@@ -136,7 +136,7 @@ describe("rebuildCommentsProjection", () => {
 
   it("devolve 0 sem chamar a Projeção quando o Canal não tem Comentários", async () => {
     const ledger = makeLedger();
-    makeChannelWithVideo(ledger);
+    await makeChannelWithVideo(ledger);
     const projection = makeRecordingProjection();
 
     const count = await rebuildCommentsProjection(CHANNEL_ID, { ledger, projection });
@@ -149,8 +149,8 @@ describe("rebuildCommentsProjection", () => {
 describe("rebuildTranscriptsProjection", () => {
   it("reconstrói a Projeção de Segmentos a partir do SQLite sem chamar o YouTube", async () => {
     const ledger = makeLedger();
-    makeChannelWithVideo(ledger);
-    ledger.upsertTranscriptSegment({
+    await makeChannelWithVideo(ledger);
+    await ledger.upsertTranscriptSegment({
       id: "v1:142",
       videoId: "v1",
       channelId: CHANNEL_ID,
@@ -188,7 +188,7 @@ describe("rebuildTranscriptsProjection", () => {
 
   it("devolve 0 sem chamar a Projeção quando o Canal não tem Segmentos", async () => {
     const ledger = makeLedger();
-    makeChannelWithVideo(ledger);
+    await makeChannelWithVideo(ledger);
     const projection = makeRecordingProjection();
 
     const count = await rebuildTranscriptsProjection(CHANNEL_ID, { ledger, projection });
@@ -201,8 +201,8 @@ describe("rebuildTranscriptsProjection", () => {
 describe("rebuildAllProjections", () => {
   it("itera todas as Fases, soma as contagens e chama cada rebuild uma vez", async () => {
     const ledger = makeLedger();
-    makeChannelWithVideo(ledger);
-    ledger.upsertComment({
+    await makeChannelWithVideo(ledger);
+    await ledger.upsertComment({
       id: "c1",
       videoId: "v1",
       channelId: CHANNEL_ID,
@@ -211,7 +211,7 @@ describe("rebuildAllProjections", () => {
       likes: 42,
       publishedAt: "2023-01-02T00:00:00Z",
     });
-    ledger.upsertTranscriptSegment({
+    await ledger.upsertTranscriptSegment({
       id: "v1:142",
       videoId: "v1",
       channelId: CHANNEL_ID,
@@ -233,7 +233,7 @@ describe("rebuildAllProjections", () => {
 
   it("devolve 0 sem chamar a Projeção quando o Canal não tem registros", async () => {
     const ledger = makeLedger();
-    ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
+    await ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
     const projection = makeRecordingProjection();
 
     const count = await rebuildAllProjections(CHANNEL_ID, { ledger, projection });
@@ -244,7 +244,7 @@ describe("rebuildAllProjections", () => {
 
   it("com um registry fake de uma Fase, chama apenas o rebuild dessa Fase", async () => {
     const ledger = makeLedger();
-    makeChannelWithVideo(ledger);
+    await makeChannelWithVideo(ledger);
     const projection = makeRecordingProjection();
 
     const fakePhases = [

@@ -52,8 +52,8 @@ function makeIngestion(ledger: Ledger): Ingestion {
   return createIngestion({ youtube, transcripts, ledger, projection });
 }
 
-function makeChannel(ledger: Ledger): void {
-  ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
+async function makeChannel(ledger: Ledger): Promise<void> {
+  await ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
 }
 
 describe("pollOnce", () => {
@@ -61,7 +61,7 @@ describe("pollOnce", () => {
     const db = makeDatabase();
     const ledger = makeLedger(db);
     const queue = makeQueue(db);
-    makeChannel(ledger);
+    await makeChannel(ledger);
     const job = queue.enqueue(CHANNEL_ID);
     const ingestion = makeIngestion(ledger);
 
@@ -71,18 +71,18 @@ describe("pollOnce", () => {
     expect(queue.listJobs(CHANNEL_ID)).toEqual([
       expect.objectContaining({ id: job.id, status: "completed" }),
     ]);
-    expect(ledger.getChannel(CHANNEL_ID)).toMatchObject({
+    expect(await ledger.getChannel(CHANNEL_ID)).toMatchObject({
       status: "completed",
       phases: { videos: { status: "completed", done: 2, total: 2 } },
     });
-    expect(ledger.listVideos(CHANNEL_ID)).toHaveLength(2);
+    expect(await ledger.listVideos(CHANNEL_ID)).toHaveLength(2);
   });
 
   it("marca o job como failed e relança o erro quando a Ingestão falha", async () => {
     const db = makeDatabase();
     const ledger = makeLedger(db);
     const queue = makeQueue(db);
-    makeChannel(ledger);
+    await makeChannel(ledger);
     const job = queue.enqueue(CHANNEL_ID);
     const failingIngestion: Ingestion = {
       runJob: async () => {

@@ -166,7 +166,7 @@ describe("createIngestion", () => {
   describe("Fase de Vídeos (via _runPhase seam)", () => {
     it("roda a Fase de Vídeos contra o YouTubeClient fake e grava os Vídeos no Ledger", async () => {
       const ledger = makeLedger();
-      ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
+      await ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
       const { logger, events } = makeRecordingLogger();
       const ingestion = createIngestion({
         youtube: makeYouTubeClient(
@@ -189,10 +189,10 @@ describe("createIngestion", () => {
 
       await ingestion._runPhase("videos", CHANNEL_ID);
 
-      const channel = ledger.getChannel(CHANNEL_ID);
+      const channel = await ledger.getChannel(CHANNEL_ID);
       expect(channel?.phases.videos).toMatchObject({ status: "completed", done: 2, total: 2 });
 
-      const stored = ledger.listVideos(CHANNEL_ID);
+      const stored = await ledger.listVideos(CHANNEL_ID);
       expect(stored).toHaveLength(2);
       expect(stored).toEqual(
         expect.arrayContaining([
@@ -211,7 +211,7 @@ describe("createIngestion", () => {
 
     it("captura métricas (views, likes, duração) via videos.list", async () => {
       const ledger = makeLedger();
-      ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
+      await ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
       const ingestion = makeIngestion(
         makeYouTubeClient(
           [{ videos: [video("v1", "Métricas", "2023-01-01T00:00:00Z")], nextPageToken: null }],
@@ -222,7 +222,7 @@ describe("createIngestion", () => {
 
       await ingestion._runPhase("videos", CHANNEL_ID);
 
-      const stored = ledger.listVideos(CHANNEL_ID);
+      const stored = await ledger.listVideos(CHANNEL_ID);
       expect(stored).toEqual([
         expect.objectContaining({ id: "v1", views: 1234, likes: 56, durationSeconds: 542 }),
       ]);
@@ -230,7 +230,7 @@ describe("createIngestion", () => {
 
     it("percorre a playlist de uploads página a página até esgotar", async () => {
       const ledger = makeLedger();
-      ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
+      await ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
       const ingestion = makeIngestion(
         makeYouTubeClient(
           [
@@ -247,14 +247,14 @@ describe("createIngestion", () => {
 
       await ingestion._runPhase("videos", CHANNEL_ID);
 
-      const channel = ledger.getChannel(CHANNEL_ID);
+      const channel = await ledger.getChannel(CHANNEL_ID);
       expect(channel?.phases.videos).toMatchObject({ status: "completed", done: 2, total: 2 });
-      expect(ledger.listVideos(CHANNEL_ID).map((v) => v.id)).toEqual(["v2", "v1"]);
+      expect((await ledger.listVideos(CHANNEL_ID)).map((v) => v.id)).toEqual(["v2", "v1"]);
     });
 
     it("não duplica Vídeos quando re-executado (dedupe por id)", async () => {
       const ledger = makeLedger();
-      ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
+      await ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
       const ingestion = makeIngestion(
         makeYouTubeClient(
           [{ videos: [video("v1", "Repetido", "2023-01-01T00:00:00Z")], nextPageToken: null }],
@@ -266,12 +266,12 @@ describe("createIngestion", () => {
       await ingestion._runPhase("videos", CHANNEL_ID);
       await ingestion._runPhase("videos", CHANNEL_ID);
 
-      expect(ledger.listVideos(CHANNEL_ID)).toHaveLength(1);
+      expect(await ledger.listVideos(CHANNEL_ID)).toHaveLength(1);
     });
 
     it("pula Vídeos sem métricas (removidos/indisponíveis) sem derrubar a Fase", async () => {
       const ledger = makeLedger();
-      ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
+      await ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
       const { logger, events } = makeRecordingLogger();
       const ingestion = createIngestion({
         youtube: makeYouTubeClient(
@@ -294,8 +294,8 @@ describe("createIngestion", () => {
 
       await ingestion._runPhase("videos", CHANNEL_ID);
 
-      expect(ledger.listVideos(CHANNEL_ID).map((v) => v.id)).toEqual(["v2"]);
-      expect(ledger.getChannel(CHANNEL_ID)?.phases.videos).toMatchObject({
+      expect((await ledger.listVideos(CHANNEL_ID)).map((v) => v.id)).toEqual(["v2"]);
+      expect((await ledger.getChannel(CHANNEL_ID))?.phases.videos).toMatchObject({
         status: "completed",
         done: 2,
         // total = Vídeos no Ledger (v1 foi pulado por não ter métricas)
@@ -310,7 +310,7 @@ describe("createIngestion", () => {
 
     it("grava Documentos de Vídeo na Projeção com contexto denormalizado (URL e thumbnail)", async () => {
       const ledger = makeLedger();
-      ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
+      await ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
       const projection = makeRecordingProjection();
       const ingestion = createIngestion({
         youtube: makeYouTubeClient(
@@ -348,9 +348,9 @@ describe("createIngestion", () => {
   });
 
   describe("Fase de Comentários (via _runPhase seam)", () => {
-    function makeChannelWithVideos(): { ledger: Ledger; ingestion: ReturnType<typeof makeIngestion> } {
+    async function makeChannelWithVideos(): Promise<{ ledger: Ledger; ingestion: ReturnType<typeof makeIngestion> }> {
       const ledger = makeLedger();
-      ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
+      await ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
       const ingestion = makeIngestion(
         makeYouTubeClient(
           [
@@ -370,7 +370,7 @@ describe("createIngestion", () => {
     }
 
     it("busca Comentários por Vídeo e os grava no Ledger como linhas canônicas", async () => {
-      const { ledger, ingestion } = makeChannelWithVideos();
+      const { ledger, ingestion } = await makeChannelWithVideos();
       await ingestion._runPhase("videos", CHANNEL_ID);
       const youtube = makeYouTubeClient([], {}, {
         v1: [{ id: "c1", author: "Gato Funky", text: "Primeiro comentário", likes: 42, publishedAt: "2023-01-02T00:00:00Z" }],
@@ -380,7 +380,7 @@ describe("createIngestion", () => {
 
       await ingestionComments._runPhase("comments", CHANNEL_ID);
 
-      const stored = ledger.listComments(CHANNEL_ID);
+      const stored = await ledger.listComments(CHANNEL_ID);
       expect(stored).toHaveLength(2);
       expect(stored).toEqual(
         expect.arrayContaining([
@@ -399,7 +399,7 @@ describe("createIngestion", () => {
           }),
         ]),
       );
-      expect(ledger.getChannel(CHANNEL_ID)?.phases.comments).toMatchObject({
+      expect((await ledger.getChannel(CHANNEL_ID))?.phases.comments).toMatchObject({
         status: "completed",
         done: 2,
         total: 2,
@@ -407,7 +407,7 @@ describe("createIngestion", () => {
     });
 
     it("projeta Documentos de Comentário com contexto denormalizado do Vídeo", async () => {
-      const { ledger, ingestion } = makeChannelWithVideos();
+      const { ledger, ingestion } = await makeChannelWithVideos();
       await ingestion._runPhase("videos", CHANNEL_ID);
       const projection = makeRecordingProjection();
       const youtube = makeYouTubeClient([], {}, {
@@ -439,7 +439,7 @@ describe("createIngestion", () => {
     });
 
     it("pula Vídeos com Comentários desativados sem derrubar a Fase", async () => {
-      const { ledger, ingestion } = makeChannelWithVideos();
+      const { ledger, ingestion } = await makeChannelWithVideos();
       await ingestion._runPhase("videos", CHANNEL_ID);
       const projection = makeRecordingProjection();
       const youtube = makeYouTubeClient([], {}, {
@@ -450,10 +450,10 @@ describe("createIngestion", () => {
 
       await ingestionComments._runPhase("comments", CHANNEL_ID);
 
-      const stored = ledger.listComments(CHANNEL_ID);
+      const stored = await ledger.listComments(CHANNEL_ID);
       expect(stored).toHaveLength(1);
       expect(stored[0]).toMatchObject({ id: "c2" });
-      expect(ledger.getChannel(CHANNEL_ID)?.phases.comments).toMatchObject({
+      expect((await ledger.getChannel(CHANNEL_ID))?.phases.comments).toMatchObject({
         status: "completed",
         done: 2,
         total: 2,
@@ -461,7 +461,7 @@ describe("createIngestion", () => {
     });
 
     it("conclui a Fase quando nenhum Vídeo tem Comentários", async () => {
-      const { ledger, ingestion } = makeChannelWithVideos();
+      const { ledger, ingestion } = await makeChannelWithVideos();
       await ingestion._runPhase("videos", CHANNEL_ID);
       const projection = makeRecordingProjection();
       const ingestionComments = createIngestion({
@@ -473,8 +473,8 @@ describe("createIngestion", () => {
 
       await ingestionComments._runPhase("comments", CHANNEL_ID);
 
-      expect(ledger.listComments(CHANNEL_ID)).toEqual([]);
-      expect(ledger.getChannel(CHANNEL_ID)?.phases.comments).toMatchObject({
+      expect(await ledger.listComments(CHANNEL_ID)).toEqual([]);
+      expect((await ledger.getChannel(CHANNEL_ID))?.phases.comments).toMatchObject({
         status: "completed",
         done: 2,
         total: 2,
@@ -483,9 +483,9 @@ describe("createIngestion", () => {
   });
 
   describe("Fase de Transcrições (via _runPhase seam)", () => {
-    function makeChannelWithVideos(): { ledger: Ledger; ingestion: ReturnType<typeof makeIngestion> } {
+    async function makeChannelWithVideos(): Promise<{ ledger: Ledger; ingestion: ReturnType<typeof makeIngestion> }> {
       const ledger = makeLedger();
-      ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
+      await ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
       const ingestion = makeIngestion(
         makeYouTubeClient(
           [
@@ -505,7 +505,7 @@ describe("createIngestion", () => {
     }
 
     it("busca Transcrições pelo TranscriptFetcher e grava os Segmentos no Ledger com timestamp", async () => {
-      const { ledger, ingestion } = makeChannelWithVideos();
+      const { ledger, ingestion } = await makeChannelWithVideos();
       await ingestion._runPhase("videos", CHANNEL_ID);
       const fetcher = makeTranscriptFetcherWith({
         v1: {
@@ -526,7 +526,7 @@ describe("createIngestion", () => {
 
       await ingestionTranscripts._runPhase("transcripts", CHANNEL_ID);
 
-      const segments = ledger.listTranscriptSegments(CHANNEL_ID);
+      const segments = await ledger.listTranscriptSegments(CHANNEL_ID);
       expect(segments).toEqual([
         expect.objectContaining({
           id: "v1:0",
@@ -545,7 +545,7 @@ describe("createIngestion", () => {
           text: "trecho com deep-link",
         }),
       ]);
-      expect(ledger.getChannel(CHANNEL_ID)?.phases.transcripts).toMatchObject({
+      expect((await ledger.getChannel(CHANNEL_ID))?.phases.transcripts).toMatchObject({
         status: "completed",
         done: 2,
         total: 2,
@@ -553,7 +553,7 @@ describe("createIngestion", () => {
     });
 
     it("projeta Documentos de Segmento com deep-link ao momento exato", async () => {
-      const { ledger, ingestion } = makeChannelWithVideos();
+      const { ledger, ingestion } = await makeChannelWithVideos();
       await ingestion._runPhase("videos", CHANNEL_ID);
       const projection = makeRecordingProjection();
       const fetcher = makeTranscriptFetcherWith({
@@ -592,7 +592,7 @@ describe("createIngestion", () => {
     });
 
     it('variant "absent": marca o Vídeo como ausente no Ledger (markTranscriptAbsent) e não derruba a Fase', async () => {
-      const { ledger, ingestion } = makeChannelWithVideos();
+      const { ledger, ingestion } = await makeChannelWithVideos();
       await ingestion._runPhase("videos", CHANNEL_ID);
       // O fetcher devolve explicitamente { kind: "absent" } para v2 — o
       // contrato discriminado substitui o antigo `null`.
@@ -617,9 +617,9 @@ describe("createIngestion", () => {
       await ingestionTranscripts._runPhase("transcripts", CHANNEL_ID);
 
       // absent → markTranscriptAbsent(v2); hasTranscriptIngestion(v2) permanece false.
-      expect(ledger.listTranscriptAbsences(CHANNEL_ID)).toEqual(["v2"]);
-      expect(ledger.listTranscriptSegments(CHANNEL_ID)).toHaveLength(1);
-      expect(ledger.getChannel(CHANNEL_ID)?.phases.transcripts).toMatchObject({
+      expect(await ledger.listTranscriptAbsences(CHANNEL_ID)).toEqual(["v2"]);
+      expect(await ledger.listTranscriptSegments(CHANNEL_ID)).toHaveLength(1);
+      expect((await ledger.getChannel(CHANNEL_ID))?.phases.transcripts).toMatchObject({
         status: "completed",
         done: 2,
         total: 2,
@@ -627,7 +627,7 @@ describe("createIngestion", () => {
     });
 
     it('variant "error": lança, NÃO chama markTranscriptAbsent, o cause flui para o logger, e o Vídeo é retriable numa chamada "transcript" posterior', async () => {
-      const { ledger, ingestion } = makeChannelWithVideos();
+      const { ledger, ingestion } = await makeChannelWithVideos();
       await ingestion._runPhase("videos", CHANNEL_ID);
       const cause = new Error("timeout do serviço não-oficial");
       // v1 falha transitoriamente (error); v2 tem Transcrição.
@@ -655,10 +655,10 @@ describe("createIngestion", () => {
 
       // NÃO chama markTranscriptAbsent para v1: nenhuma ausência é escrita.
       // (v2 foi processado antes de v1 falhar — seu Segmento é upsertado.)
-      expect(ledger.listTranscriptAbsences(CHANNEL_ID)).toEqual([]);
+      expect(await ledger.listTranscriptAbsences(CHANNEL_ID)).toEqual([]);
       // v1 (o Vídeo que falhou) permanece retriable: sem Segmento e sem
       // ausência marcada.
-      const segmentsAfterError = ledger.listTranscriptSegments(CHANNEL_ID);
+      const segmentsAfterError = await ledger.listTranscriptSegments(CHANNEL_ID);
       expect(segmentsAfterError.map((s) => s.videoId)).toEqual(["v2"]);
 
       // Retomada: numa chamada posterior com { kind: "transcript" } para v1,
@@ -687,10 +687,10 @@ describe("createIngestion", () => {
       await okIngestion._runPhase("transcripts", CHANNEL_ID);
 
       // v1 agora tem Segmento ingerido; nenhuma ausência marcada para ele.
-      const segmentsAfterOk = ledger.listTranscriptSegments(CHANNEL_ID).map((s) => s.videoId).sort();
+      const segmentsAfterOk = (await ledger.listTranscriptSegments(CHANNEL_ID)).map((s) => s.videoId).sort();
       expect(segmentsAfterOk).toEqual(["v1", "v2"]);
-      expect(ledger.listTranscriptAbsences(CHANNEL_ID)).toEqual([]);
-      expect(ledger.getChannel(CHANNEL_ID)?.phases.transcripts).toMatchObject({
+      expect(await ledger.listTranscriptAbsences(CHANNEL_ID)).toEqual([]);
+      expect((await ledger.getChannel(CHANNEL_ID))?.phases.transcripts).toMatchObject({
         status: "completed",
         done: 2,
         total: 2,
@@ -699,10 +699,10 @@ describe("createIngestion", () => {
 
     it('variant "error" de um Vídeo não envenena o Canal: runJob marca a Fase failed e permanece resumível', async () => {
       const ledger = makeLedger();
-      ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
+      await ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
       // Pré-popula Vídeos e marca as Fases de Vídeos e Comentários como
       // completed, para que runJob retome direto na Fase de Transcrições.
-      ledger.upsertVideo({
+      await ledger.upsertVideo({
         id: "v1",
         channelId: CHANNEL_ID,
         title: "Vídeo v1",
@@ -712,8 +712,8 @@ describe("createIngestion", () => {
         likes: 0,
         durationSeconds: 10,
       });
-      ledger.updatePhase(CHANNEL_ID, "videos", { status: "completed", total: 1 });
-      ledger.updatePhase(CHANNEL_ID, "comments", { status: "completed", total: 1 });
+      await ledger.updatePhase(CHANNEL_ID, "videos", { status: "completed", total: 1 });
+      await ledger.updatePhase(CHANNEL_ID, "comments", { status: "completed", total: 1 });
 
       const cause = new Error("DNS do serviço não-oficial");
       const fetcher: TranscriptFetcher = {
@@ -731,17 +731,17 @@ describe("createIngestion", () => {
       await expect(ingestion.runJob(CHANNEL_ID)).rejects.toBe(cause);
 
       // A Fase de Transcrições está failed (resumível), não completed.
-      expect(ledger.getChannel(CHANNEL_ID)?.phases.transcripts).toMatchObject({ status: "failed" });
-      expect(ledger.getChannel(CHANNEL_ID)?.status).toBe("failed");
+      expect((await ledger.getChannel(CHANNEL_ID))?.phases.transcripts).toMatchObject({ status: "failed" });
+      expect((await ledger.getChannel(CHANNEL_ID))?.status).toBe("failed");
       // Nenhuma ausência durável escrita — o Vídeo permanece retriable.
-      expect(ledger.listTranscriptAbsences(CHANNEL_ID)).toEqual([]);
+      expect(await ledger.listTranscriptAbsences(CHANNEL_ID)).toEqual([]);
       // O cause original flui para o logger.
       expect(errorCalls).toHaveLength(1);
       expect(errorCalls[0]?.cause).toBe(cause);
     });
 
     it("conclui a Fase quando nenhum Vídeo tem Transcrição", async () => {
-      const { ledger, ingestion } = makeChannelWithVideos();
+      const { ledger, ingestion } = await makeChannelWithVideos();
       await ingestion._runPhase("videos", CHANNEL_ID);
       const ingestionTranscripts = createIngestion({
         youtube: makeYouTubeClient([], {}),
@@ -752,9 +752,9 @@ describe("createIngestion", () => {
 
       await ingestionTranscripts._runPhase("transcripts", CHANNEL_ID);
 
-      expect(ledger.listTranscriptSegments(CHANNEL_ID)).toEqual([]);
-      expect(ledger.listTranscriptAbsences(CHANNEL_ID)).toEqual(["v1", "v2"]);
-      expect(ledger.getChannel(CHANNEL_ID)?.phases.transcripts).toMatchObject({
+      expect(await ledger.listTranscriptSegments(CHANNEL_ID)).toEqual([]);
+      expect(await ledger.listTranscriptAbsences(CHANNEL_ID)).toEqual(["v1", "v2"]);
+      expect((await ledger.getChannel(CHANNEL_ID))?.phases.transcripts).toMatchObject({
         status: "completed",
         done: 2,
         total: 2,
@@ -765,7 +765,7 @@ describe("createIngestion", () => {
   describe("runJob", () => {
     it("marca o Canal como ingesting durante a Fase e completed ao final", async () => {
       const ledger = makeLedger();
-      ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
+      await ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
       const ingestion = makeIngestion(
         makeYouTubeClient(
           [{ videos: [video("v1", "Um vídeo", "2023-01-01T00:00:00Z")], nextPageToken: null }],
@@ -776,14 +776,14 @@ describe("createIngestion", () => {
 
       await ingestion.runJob(CHANNEL_ID);
 
-      const channel = ledger.getChannel(CHANNEL_ID);
+      const channel = await ledger.getChannel(CHANNEL_ID);
       expect(channel?.status).toBe("completed");
       expect(channel?.phases.videos).toMatchObject({ status: "completed", done: 1, total: 1 });
     });
 
     it("marca o Canal como completed ao final e roda também a Fase de Comentários", async () => {
       const ledger = makeLedger();
-      ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
+      await ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
       const projection = makeRecordingProjection();
       const ingestion = createIngestion({
         youtube: makeYouTubeClient(
@@ -798,18 +798,18 @@ describe("createIngestion", () => {
 
       await ingestion.runJob(CHANNEL_ID);
 
-      const channel = ledger.getChannel(CHANNEL_ID);
+      const channel = await ledger.getChannel(CHANNEL_ID);
       expect(channel?.status).toBe("completed");
       expect(channel?.phases.videos).toMatchObject({ status: "completed", done: 1, total: 1 });
       expect(channel?.phases.comments).toMatchObject({ status: "completed", done: 1, total: 1 });
       expect(channel?.phases.transcripts).toMatchObject({ status: "completed", done: 1, total: 1 });
-      expect(ledger.listComments(CHANNEL_ID)).toHaveLength(1);
+      expect(await ledger.listComments(CHANNEL_ID)).toHaveLength(1);
       expect(projection.calls.flatMap((c) => c.documents.map((d) => d.type))).toEqual(["video", "comment"]);
     });
 
     it("roda as três Fases e projeta Segmentos com deep-link", async () => {
       const ledger = makeLedger();
-      ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
+      await ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
       const projection = makeRecordingProjection();
       const ingestion = createIngestion({
         youtube: makeYouTubeClient(
@@ -825,7 +825,7 @@ describe("createIngestion", () => {
 
       await ingestion.runJob(CHANNEL_ID);
 
-      const channel = ledger.getChannel(CHANNEL_ID);
+      const channel = await ledger.getChannel(CHANNEL_ID);
       expect(channel?.status).toBe("completed");
       expect(channel?.phases.videos).toMatchObject({ status: "completed" });
       expect(channel?.phases.comments).toMatchObject({ status: "completed" });
@@ -842,7 +842,7 @@ describe("createIngestion", () => {
 
     it("marca o Canal como failed quando a Fase de Vídeos falha", async () => {
       const ledger = makeLedger();
-      ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
+      await ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
       const failingYoutube: YouTubeClient = {
         resolveHandle: async () => ({ channelId: CHANNEL_ID, title: "Funky Black Cat" }),
         getUploadsPlaylistId: async () => {
@@ -862,7 +862,7 @@ describe("createIngestion", () => {
 
       await expect(ingestion.runJob(CHANNEL_ID)).rejects.toThrow("cota esgotada");
 
-      const channel = ledger.getChannel(CHANNEL_ID);
+      const channel = await ledger.getChannel(CHANNEL_ID);
       expect(channel?.status).toBe("failed");
       expect(channel?.phases.videos.status).toBe("failed");
       expect(channel?.lastError).toBe("cota esgotada");
@@ -870,7 +870,7 @@ describe("createIngestion", () => {
 
     it("registra eventos estruturados de cada Fase na ordem de execução", async () => {
       const ledger = makeLedger();
-      ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
+      await ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
       const events: Array<{ event: string; data: Record<string, unknown> }> = [];
       const logger = {
         info: () => {},
@@ -924,14 +924,14 @@ describe("createIngestion", () => {
   describe("Sincronização e resume guiados pelo Ledger", () => {
     const daysAgo = (days: number) => new Date(Date.now() - days * 86_400_000).toISOString();
 
-    function makeChannel(ledger: Ledger): void {
-      ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
+    async function makeChannel(ledger: Ledger): Promise<void> {
+      await ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
     }
 
     describe("Fase de Vídeos em Sincronização (via _runPhase seam)", () => {
       it("para no primeiro Vídeo já conhecido e não re-busca métricas de Vídeos ingeridos", async () => {
         const ledger = makeLedger();
-        makeChannel(ledger);
+        await makeChannel(ledger);
         const first = makeIngestion(
           makeYouTubeClient([{ videos: [video("v1", "Antigo", daysAgo(200))], nextPageToken: null }], {
             v1: { views: 1, likes: 0, durationSeconds: 10 },
@@ -961,13 +961,13 @@ describe("createIngestion", () => {
 
         expect(statsCalls).toEqual(["v3"]);
         expect(listUploadsCalls).toEqual([null]);
-        expect(ledger.listVideos(CHANNEL_ID).map((v) => v.id).sort()).toEqual(["v1", "v3"]);
+        expect((await ledger.listVideos(CHANNEL_ID)).map((v) => v.id).sort()).toEqual(["v1", "v3"]);
       });
 
       it("no resume após falha, percorre a playlist sem re-buscar métricas de Vídeos já ingeridos", async () => {
         const ledger = makeLedger();
-        makeChannel(ledger);
-        ledger.upsertVideo({
+        await makeChannel(ledger);
+        await ledger.upsertVideo({
           id: "v1",
           channelId: CHANNEL_ID,
           title: "Antigo",
@@ -977,7 +977,7 @@ describe("createIngestion", () => {
           likes: 0,
           durationSeconds: 10,
         });
-        ledger.upsertVideo({
+        await ledger.upsertVideo({
           id: "v2",
           channelId: CHANNEL_ID,
           title: "Antigo",
@@ -987,7 +987,7 @@ describe("createIngestion", () => {
           likes: 0,
           durationSeconds: 20,
         });
-        ledger.updatePhase(CHANNEL_ID, "videos", { status: "failed" });
+        await ledger.updatePhase(CHANNEL_ID, "videos", { status: "failed" });
 
         const statsCalls: string[] = [];
         const ingestion = makeIngestion(
@@ -1008,21 +1008,21 @@ describe("createIngestion", () => {
         await ingestion._runPhase("videos", CHANNEL_ID);
 
         expect(statsCalls).toEqual(["v3"]);
-        expect(ledger.listVideos(CHANNEL_ID).map((v) => v.id)).toEqual(["v3", "v2", "v1"]);
-        expect(ledger.getChannel(CHANNEL_ID)?.phases.videos).toMatchObject({ status: "completed", done: 3, total: 3 });
+        expect((await ledger.listVideos(CHANNEL_ID)).map((v) => v.id)).toEqual(["v3", "v2", "v1"]);
+        expect((await ledger.getChannel(CHANNEL_ID))?.phases.videos).toMatchObject({ status: "completed", done: 3, total: 3 });
       });
     });
 
     describe("Fase de Comentários em resume (via _runPhase seam)", () => {
-      function makeChannelWithVideos(ledger: Ledger): void {
-        makeChannel(ledger);
+      async function makeChannelWithVideos(ledger: Ledger): Promise<void> {
+        await makeChannel(ledger);
         for (const [id, days] of [
           ["v1", 10],
           ["v2", 20],
           ["v3", 30],
           ["v4", 40],
         ] as const) {
-          ledger.upsertVideo({
+          await ledger.upsertVideo({
             id,
             channelId: CHANNEL_ID,
             title: `Vídeo ${id}`,
@@ -1037,8 +1037,8 @@ describe("createIngestion", () => {
 
       it("pula Vídeos já ingeridos (com Comentários ou ausência marcada) e processa só o pendente", async () => {
         const ledger = makeLedger();
-        makeChannelWithVideos(ledger);
-        ledger.upsertComment({
+        await makeChannelWithVideos(ledger);
+        await ledger.upsertComment({
           id: "c1",
           videoId: "v1",
           channelId: CHANNEL_ID,
@@ -1047,8 +1047,8 @@ describe("createIngestion", () => {
           likes: 1,
           publishedAt: daysAgo(5),
         });
-        ledger.markCommentAbsence("v3", "disabled");
-        ledger.updatePhase(CHANNEL_ID, "comments", { status: "failed" });
+        await ledger.markCommentAbsence("v3", "disabled");
+        await ledger.updatePhase(CHANNEL_ID, "comments", { status: "failed" });
 
         const commentsCalls: string[] = [];
         const ingestion = createIngestion({
@@ -1069,15 +1069,15 @@ describe("createIngestion", () => {
         await ingestion._runPhase("comments", CHANNEL_ID);
 
         expect(commentsCalls).toEqual(["v2", "v4"]);
-        expect(ledger.listComments(CHANNEL_ID).map((c) => c.id).sort()).toEqual(["c1", "c2", "c4"]);
-        expect(ledger.listCommentAbsences(CHANNEL_ID)).toEqual(["v3"]);
-        expect(ledger.getChannel(CHANNEL_ID)?.phases.comments).toMatchObject({ status: "completed", done: 4, total: 4 });
+        expect((await ledger.listComments(CHANNEL_ID)).map((c) => c.id).sort()).toEqual(["c1", "c2", "c4"]);
+        expect(await ledger.listCommentAbsences(CHANNEL_ID)).toEqual(["v3"]);
+        expect((await ledger.getChannel(CHANNEL_ID))?.phases.comments).toMatchObject({ status: "completed", done: 4, total: 4 });
       });
 
       it("na Sincronização re-busca apenas Comentários de Vídeos recentes e substitui os antigos", async () => {
         const ledger = makeLedger();
-        makeChannel(ledger);
-        ledger.upsertVideo({
+        await makeChannel(ledger);
+        await ledger.upsertVideo({
           id: "v1",
           channelId: CHANNEL_ID,
           title: "Recente",
@@ -1087,7 +1087,7 @@ describe("createIngestion", () => {
           likes: 0,
           durationSeconds: 10,
         });
-        ledger.upsertVideo({
+        await ledger.upsertVideo({
           id: "v2",
           channelId: CHANNEL_ID,
           title: "Antigo",
@@ -1097,7 +1097,7 @@ describe("createIngestion", () => {
           likes: 0,
           durationSeconds: 20,
         });
-        ledger.upsertComment({
+        await ledger.upsertComment({
           id: "c1",
           videoId: "v1",
           channelId: CHANNEL_ID,
@@ -1106,7 +1106,7 @@ describe("createIngestion", () => {
           likes: 1,
           publishedAt: daysAgo(5),
         });
-        ledger.upsertComment({
+        await ledger.upsertComment({
           id: "c2",
           videoId: "v2",
           channelId: CHANNEL_ID,
@@ -1115,7 +1115,7 @@ describe("createIngestion", () => {
           likes: 2,
           publishedAt: daysAgo(300),
         });
-        ledger.updatePhase(CHANNEL_ID, "comments", { status: "completed" });
+        await ledger.updatePhase(CHANNEL_ID, "comments", { status: "completed" });
 
         const commentsCalls: string[] = [];
         const ingestion = createIngestion({
@@ -1138,19 +1138,19 @@ describe("createIngestion", () => {
         await ingestion._runPhase("comments", CHANNEL_ID);
 
         expect(commentsCalls).toEqual(["v1"]);
-        const comments = ledger.listComments(CHANNEL_ID);
+        const comments = await ledger.listComments(CHANNEL_ID);
         expect(comments.find((c) => c.id === "c1")).toMatchObject({ text: "Comentário atualizado", author: "Novo Autor" });
         expect(comments.map((c) => c.id).sort()).toEqual(["c1", "c1b", "c2"]);
       });
 
       it("respeita a janela de recência configurável na Sincronização", async () => {
         const ledger = makeLedger();
-        makeChannel(ledger);
+        await makeChannel(ledger);
         for (const [id, days] of [
           ["v1", 3],
           ["v2", 10],
         ] as const) {
-          ledger.upsertVideo({
+          await ledger.upsertVideo({
             id,
             channelId: CHANNEL_ID,
             title: `Vídeo ${id}`,
@@ -1161,7 +1161,7 @@ describe("createIngestion", () => {
             durationSeconds: 10,
           });
         }
-        ledger.updatePhase(CHANNEL_ID, "comments", { status: "completed" });
+        await ledger.updatePhase(CHANNEL_ID, "comments", { status: "completed" });
 
         const commentsCalls: string[] = [];
         const ingestion = createIngestion({
@@ -1179,12 +1179,12 @@ describe("createIngestion", () => {
 
       it("marca Vídeos com Comentários desativados e vazios como ausência no Ledger", async () => {
         const ledger = makeLedger();
-        makeChannel(ledger);
+        await makeChannel(ledger);
         for (const [id, days] of [
           ["v1", 10],
           ["v2", 20],
         ] as const) {
-          ledger.upsertVideo({
+          await ledger.upsertVideo({
             id,
             channelId: CHANNEL_ID,
             title: `Vídeo ${id}`,
@@ -1207,21 +1207,21 @@ describe("createIngestion", () => {
 
         await ingestion._runPhase("comments", CHANNEL_ID);
 
-        expect(ledger.listCommentAbsences(CHANNEL_ID)).toEqual(["v1", "v2"]);
-        expect(ledger.getChannel(CHANNEL_ID)?.phases.comments).toMatchObject({ status: "completed", done: 2, total: 2 });
+        expect(await ledger.listCommentAbsences(CHANNEL_ID)).toEqual(["v1", "v2"]);
+        expect((await ledger.getChannel(CHANNEL_ID))?.phases.comments).toMatchObject({ status: "completed", done: 2, total: 2 });
       });
     });
 
     describe("Fase de Transcrições em resume (via _runPhase seam)", () => {
       it("pula Vídeos com Transcrição já ingerida (Segmentos ou ausência marcada)", async () => {
         const ledger = makeLedger();
-        makeChannel(ledger);
+        await makeChannel(ledger);
         for (const [id, days] of [
           ["v1", 10],
           ["v2", 20],
           ["v3", 30],
         ] as const) {
-          ledger.upsertVideo({
+          await ledger.upsertVideo({
             id,
             channelId: CHANNEL_ID,
             title: `Vídeo ${id}`,
@@ -1232,7 +1232,7 @@ describe("createIngestion", () => {
             durationSeconds: 10,
           });
         }
-        ledger.upsertTranscriptSegment({
+        await ledger.upsertTranscriptSegment({
           id: "v1:0",
           videoId: "v1",
           channelId: CHANNEL_ID,
@@ -1240,8 +1240,8 @@ describe("createIngestion", () => {
           end: 10,
           text: "trecho de v1",
         });
-        ledger.markTranscriptAbsent("v2");
-        ledger.updatePhase(CHANNEL_ID, "transcripts", { status: "failed" });
+        await ledger.markTranscriptAbsent("v2");
+        await ledger.updatePhase(CHANNEL_ID, "transcripts", { status: "failed" });
 
         const recording = makeRecordingTranscriptFetcher({
           v3: { videoId: "v3", segments: [{ start: 0, duration: 10, text: "trecho de v3" }] },
@@ -1256,16 +1256,16 @@ describe("createIngestion", () => {
         await ingestion._runPhase("transcripts", CHANNEL_ID);
 
         expect(recording.calls).toEqual(["v3"]);
-        expect(ledger.listTranscriptSegments(CHANNEL_ID).map((s) => s.videoId).sort()).toEqual(["v1", "v3"]);
-        expect(ledger.listTranscriptAbsences(CHANNEL_ID)).toEqual(["v2"]);
-        expect(ledger.getChannel(CHANNEL_ID)?.phases.transcripts).toMatchObject({ status: "completed", done: 3, total: 3 });
+        expect((await ledger.listTranscriptSegments(CHANNEL_ID)).map((s) => s.videoId).sort()).toEqual(["v1", "v3"]);
+        expect(await ledger.listTranscriptAbsences(CHANNEL_ID)).toEqual(["v2"]);
+        expect((await ledger.getChannel(CHANNEL_ID))?.phases.transcripts).toMatchObject({ status: "completed", done: 3, total: 3 });
       });
     });
 
     describe("runJob em resume", () => {
       it("retoma a Fase que falhou sem reprocessar o que já foi ingerido", async () => {
         const ledger = makeLedger();
-        makeChannel(ledger);
+        await makeChannel(ledger);
         const videos = [
           video("v3", "Recente", daysAgo(1)),
           video("v2", "Recente", daysAgo(2)),
@@ -1291,7 +1291,7 @@ describe("createIngestion", () => {
         await expect(failingIngestion.runJob(CHANNEL_ID)).rejects.toThrow("cota esgotada");
 
         // Resume: lê o status das Fases no Ledger antes de retomar
-        expect(ledger.getChannel(CHANNEL_ID)).toMatchObject({
+        expect(await ledger.getChannel(CHANNEL_ID)).toMatchObject({
           status: "failed",
           phases: {
             videos: { status: "completed" },
@@ -1321,14 +1321,14 @@ describe("createIngestion", () => {
 
         await okIngestion.runJob(CHANNEL_ID);
 
-        const channel = ledger.getChannel(CHANNEL_ID);
+        const channel = await ledger.getChannel(CHANNEL_ID);
         expect(channel?.status).toBe("completed");
         expect(channel?.phases.videos).toMatchObject({ status: "completed" });
         expect(channel?.phases.comments).toMatchObject({ status: "completed" });
         expect(channel?.phases.transcripts).toMatchObject({ status: "completed" });
-        expect(ledger.listVideos(CHANNEL_ID)).toHaveLength(3);
+        expect(await ledger.listVideos(CHANNEL_ID)).toHaveLength(3);
         expect(commentsCalls).toEqual(["v2", "v1"]);
-        expect(ledger.listComments(CHANNEL_ID).map((c) => c.id).sort()).toEqual(["c1", "c2", "c3"]);
+        expect((await ledger.listComments(CHANNEL_ID)).map((c) => c.id).sort()).toEqual(["c1", "c2", "c3"]);
         // Resume guiado pelo Ledger: a Fase de Vídeos para cedo no primeiro
         // Vídeo conhecido (v3) sem emitir video:processed, a Fase de
         // Comentários pula v3 já ingerido e processa só v2 e v1, e a Fase
@@ -1350,13 +1350,13 @@ describe("createIngestion", () => {
 
       it("no resume da Fase de Vídeos, total é a contagem de Vídeos no Ledger (não o done)", async () => {
         const ledger = makeLedger();
-        makeChannel(ledger);
+        await makeChannel(ledger);
         // Ledger já tem 2 Vídeos de uma ingestão anterior concluída
         for (const [id, days] of [
           ["v1", 200],
           ["v2", 180],
         ] as const) {
-          ledger.upsertVideo({
+          await ledger.upsertVideo({
             id,
             channelId: CHANNEL_ID,
             title: `Vídeo ${id}`,
@@ -1367,7 +1367,7 @@ describe("createIngestion", () => {
             durationSeconds: 10,
           });
         }
-        ledger.updatePhase(CHANNEL_ID, "videos", { status: "completed" });
+        await ledger.updatePhase(CHANNEL_ID, "videos", { status: "completed" });
 
         const { logger, events } = makeRecordingLogger();
         const ingestion = createIngestion({
@@ -1382,14 +1382,14 @@ describe("createIngestion", () => {
         });
 
         // Resume: lê o status da Fase de Vídeos antes de retomar
-        expect(ledger.getChannel(CHANNEL_ID)?.phases.videos.status).toBe("completed");
+        expect((await ledger.getChannel(CHANNEL_ID))?.phases.videos.status).toBe("completed");
 
         await ingestion.runJob(CHANNEL_ID);
 
         // A Fase para cedo no v1 conhecido: done = 2 (v3 novo + v1 que disparou o stop),
         // mas total deve ser a contagem de Vídeos no Ledger = 3 (v1, v2, v3).
-        expect(ledger.listVideos(CHANNEL_ID)).toHaveLength(3);
-        expect(ledger.getChannel(CHANNEL_ID)?.phases.videos).toMatchObject({
+        expect(await ledger.listVideos(CHANNEL_ID)).toHaveLength(3);
+        expect((await ledger.getChannel(CHANNEL_ID))?.phases.videos).toMatchObject({
           status: "completed",
           done: 2,
           total: 3,
@@ -1409,7 +1409,7 @@ describe("createIngestion", () => {
     describe("runJob em Sincronização (via runJob seam)", () => {
       it("chama runJob duas vezes: a segunda chamada re-roda só as Fases recentes e emite os eventos correspondentes", async () => {
         const ledger = makeLedger();
-        makeChannel(ledger);
+        await makeChannel(ledger);
         const videos = [
           video("v1", "Recente", daysAgo(10)),
           video("v2", "Antigo", daysAgo(365)),
@@ -1434,10 +1434,10 @@ describe("createIngestion", () => {
         await firstIngestion.runJob(CHANNEL_ID);
 
         // Após a primeira ingestão, todas as Fases estão completed
-        expect(ledger.getChannel(CHANNEL_ID)?.status).toBe("completed");
-        expect(ledger.getChannel(CHANNEL_ID)?.phases.videos.status).toBe("completed");
-        expect(ledger.getChannel(CHANNEL_ID)?.phases.comments.status).toBe("completed");
-        expect(ledger.getChannel(CHANNEL_ID)?.phases.transcripts.status).toBe("completed");
+        expect((await ledger.getChannel(CHANNEL_ID))?.status).toBe("completed");
+        expect((await ledger.getChannel(CHANNEL_ID))?.phases.videos.status).toBe("completed");
+        expect((await ledger.getChannel(CHANNEL_ID))?.phases.comments.status).toBe("completed");
+        expect((await ledger.getChannel(CHANNEL_ID))?.phases.transcripts.status).toBe("completed");
 
         // Sincronização: segunda chamada de runJob. A janela de recência
         // padrão (30 dias) faz só v1 ser re-processado nas Fases de Comentários
@@ -1453,7 +1453,7 @@ describe("createIngestion", () => {
 
         await secondIngestion.runJob(CHANNEL_ID);
 
-        expect(ledger.getChannel(CHANNEL_ID)?.status).toBe("completed");
+        expect((await ledger.getChannel(CHANNEL_ID))?.status).toBe("completed");
         // A segunda chamada de runJob emite só os eventos das Fases que
         // re-rodaram: Vídeos (para cedo no v1 conhecido), Comentários
         // (re-processa só v1 recente; v2 antigo é pulado sem emitir evento),
@@ -1480,8 +1480,8 @@ describe("createIngestion", () => {
     describe("ghost sweep", () => {
       it("no Comentário phase sync mode, chama projection.remove para varrer Documentos stale do Vídeo antes de re-projetar", async () => {
         const ledger = makeLedger();
-        makeChannel(ledger);
-        ledger.upsertVideo({
+        await makeChannel(ledger);
+        await ledger.upsertVideo({
           id: "v1",
           channelId: CHANNEL_ID,
           title: "Recente",
@@ -1491,7 +1491,7 @@ describe("createIngestion", () => {
           likes: 0,
           durationSeconds: 10,
         });
-        ledger.upsertVideo({
+        await ledger.upsertVideo({
           id: "v2",
           channelId: CHANNEL_ID,
           title: "Antigo",
@@ -1502,7 +1502,7 @@ describe("createIngestion", () => {
           durationSeconds: 20,
         });
         // c1 fica no Ledger da ingestão anterior; o Documento correspondente está no Índice
-        ledger.upsertComment({
+        await ledger.upsertComment({
           id: "c1",
           videoId: "v1",
           channelId: CHANNEL_ID,
@@ -1511,7 +1511,7 @@ describe("createIngestion", () => {
           likes: 1,
           publishedAt: daysAgo(5),
         });
-        ledger.upsertComment({
+        await ledger.upsertComment({
           id: "c2",
           videoId: "v2",
           channelId: CHANNEL_ID,
@@ -1520,7 +1520,7 @@ describe("createIngestion", () => {
           likes: 2,
           publishedAt: daysAgo(300),
         });
-        ledger.updatePhase(CHANNEL_ID, "comments", { status: "completed" });
+        await ledger.updatePhase(CHANNEL_ID, "comments", { status: "completed" });
 
         const projection = makeRecordingProjection();
         const ingestion = createIngestion({
@@ -1563,8 +1563,8 @@ describe("createIngestion", () => {
 
       it("no Comentário phase sync mode, chama projection.remove quando o Vídeo antes tinha Comentários e agora não tem mais (shift para zero)", async () => {
         const ledger = makeLedger();
-        makeChannel(ledger);
-        ledger.upsertVideo({
+        await makeChannel(ledger);
+        await ledger.upsertVideo({
           id: "v1",
           channelId: CHANNEL_ID,
           title: "Vídeo v1",
@@ -1575,7 +1575,7 @@ describe("createIngestion", () => {
           durationSeconds: 10,
         });
         // Comentários antigos do v1 ficam no Ledger da ingestão anterior; os Documentos correspondentes estão no Índice
-        ledger.upsertComment({
+        await ledger.upsertComment({
           id: "c1",
           videoId: "v1",
           channelId: CHANNEL_ID,
@@ -1584,7 +1584,7 @@ describe("createIngestion", () => {
           likes: 5,
           publishedAt: daysAgo(20),
         });
-        ledger.updatePhase(CHANNEL_ID, "comments", { status: "completed" });
+        await ledger.updatePhase(CHANNEL_ID, "comments", { status: "completed" });
 
         const projection = makeRecordingProjection();
         const ingestion = createIngestion({
@@ -1608,8 +1608,8 @@ describe("createIngestion", () => {
         expect(predicate({ id: "v1", type: "video", channelId: CHANNEL_ID })).toBe(false);
 
         // Ledger limpo: sem Comentários e com ausência marcada
-        expect(ledger.listComments(CHANNEL_ID)).toEqual([]);
-        expect(ledger.listCommentAbsences(CHANNEL_ID)).toEqual(["v1"]);
+        expect(await ledger.listComments(CHANNEL_ID)).toEqual([]);
+        expect(await ledger.listCommentAbsences(CHANNEL_ID)).toEqual(["v1"]);
 
         // Nenhum Documento de Comentário é re-projetado
         const addedDocs = projection.calls.flatMap((c) => c.documents);
@@ -1618,8 +1618,8 @@ describe("createIngestion", () => {
 
       it("no Comentário phase initial mode, não chama projection.remove ao re-projetar Vídeos sem Comentário prévio", async () => {
         const ledger = makeLedger();
-        makeChannel(ledger);
-        ledger.upsertVideo({
+        await makeChannel(ledger);
+        await ledger.upsertVideo({
           id: "v1",
           channelId: CHANNEL_ID,
           title: "Vídeo v1",
@@ -1653,8 +1653,8 @@ describe("createIngestion", () => {
 
       it("no Transcrição phase, chama projection.remove para varrer Segmentos stale do Vídeo antes de re-projetar quando a Transcrição mudou", async () => {
         const ledger = makeLedger();
-        makeChannel(ledger);
-        ledger.upsertVideo({
+        await makeChannel(ledger);
+        await ledger.upsertVideo({
           id: "v1",
           channelId: CHANNEL_ID,
           title: "Vídeo v1",
@@ -1665,7 +1665,7 @@ describe("createIngestion", () => {
           durationSeconds: 10,
         });
         // Segmentos antigos do v1 ficam no Ledger da ingestão anterior; o Documento correspondente está no Índice
-        ledger.upsertTranscriptSegment({
+        await ledger.upsertTranscriptSegment({
           id: "v1:0",
           videoId: "v1",
           channelId: CHANNEL_ID,
@@ -1674,7 +1674,7 @@ describe("createIngestion", () => {
           text: "trecho antigo de v1",
         });
         // marca a Fase como completed (modo Sincronização: vou re-processar a Transcrição)
-        ledger.updatePhase(CHANNEL_ID, "transcripts", { status: "completed" });
+        await ledger.updatePhase(CHANNEL_ID, "transcripts", { status: "completed" });
 
         const projection = makeRecordingProjection();
         const fetcher = makeTranscriptFetcherWith({
@@ -1708,7 +1708,7 @@ describe("createIngestion", () => {
         expect(predicate({ id: "c1", type: "comment", channelId: CHANNEL_ID, videoId: "v1" })).toBe(false);
 
         // Segmentos antigos foram substituídos pelos novos no Ledger
-        const storedSegments = ledger.listTranscriptSegments(CHANNEL_ID);
+        const storedSegments = await ledger.listTranscriptSegments(CHANNEL_ID);
         expect(storedSegments).toHaveLength(2);
         expect(storedSegments.find((s) => s.start === 0)?.text).toBe("trecho novo de v1");
         expect(storedSegments.find((s) => s.start === 142)?.text).toBe("trecho novo de v1 com deep-link");
@@ -1716,8 +1716,8 @@ describe("createIngestion", () => {
 
       it("no Transcrição phase, quando a Transcrição não está disponível, remove não é chamado (não há re-projeção)", async () => {
         const ledger = makeLedger();
-        makeChannel(ledger);
-        ledger.upsertVideo({
+        await makeChannel(ledger);
+        await ledger.upsertVideo({
           id: "v1",
           channelId: CHANNEL_ID,
           title: "Vídeo v1",
@@ -1727,7 +1727,7 @@ describe("createIngestion", () => {
           likes: 0,
           durationSeconds: 10,
         });
-        ledger.updatePhase(CHANNEL_ID, "transcripts", { status: "completed" });
+        await ledger.updatePhase(CHANNEL_ID, "transcripts", { status: "completed" });
 
         const projection = makeRecordingProjection();
         // fetcher devolve null para v1 (transcrição indisponível)
@@ -1744,7 +1744,7 @@ describe("createIngestion", () => {
         expect(projection.removeCalls).toEqual([]);
         const addedDocs = projection.calls.flatMap((c) => c.documents);
         expect(addedDocs.filter((d) => d.type === "segment")).toEqual([]);
-        expect(ledger.listTranscriptAbsences(CHANNEL_ID)).toEqual(["v1"]);
+        expect(await ledger.listTranscriptAbsences(CHANNEL_ID)).toEqual(["v1"]);
       });
     });
   });
@@ -1762,7 +1762,7 @@ describe("createIngestion", () => {
 
     it("chama os runs do registry na ordem e marca o Canal como completed", async () => {
       const ledger = makeLedger();
-      ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
+      await ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
 
       const videosRun = vi.fn(async () => {});
       const commentsRun = vi.fn(async () => {});
@@ -1787,12 +1787,12 @@ describe("createIngestion", () => {
       expect(videosRun).toHaveBeenCalledWith(CHANNEL_ID);
       expect(commentsRun).toHaveBeenCalledTimes(1);
       expect(commentsRun).toHaveBeenCalledWith(CHANNEL_ID);
-      expect(ledger.getChannel(CHANNEL_ID)?.status).toBe("completed");
+      expect((await ledger.getChannel(CHANNEL_ID))?.status).toBe("completed");
     });
 
     it("quando um run lança, marca a Fase e o Canal como failed e relança", async () => {
       const ledger = makeLedger();
-      ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
+      await ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
 
       const boom = new Error("falha na fase comments");
       const videosRun = vi.fn(async () => {});
@@ -1818,9 +1818,9 @@ describe("createIngestion", () => {
 
       expect(videosRun).toHaveBeenCalledTimes(1);
       expect(commentsRun).toHaveBeenCalledTimes(1);
-      expect(ledger.getChannel(CHANNEL_ID)?.status).toBe("failed");
-      expect(ledger.getChannel(CHANNEL_ID)?.phases.comments.status).toBe("failed");
-      expect(ledger.getChannel(CHANNEL_ID)?.lastError).toBe("falha na fase comments");
+      expect((await ledger.getChannel(CHANNEL_ID))?.status).toBe("failed");
+      expect((await ledger.getChannel(CHANNEL_ID))?.phases.comments.status).toBe("failed");
+      expect((await ledger.getChannel(CHANNEL_ID))?.lastError).toBe("falha na fase comments");
     });
   });
 });

@@ -16,13 +16,13 @@ export interface RebuildDeps {
 async function rebuildProjection<T>(
   channelId: string,
   records: T[],
-  getContext: (record: T) => VideoContext | null,
+  getContext: (record: T) => Promise<VideoContext | null>,
   toDocument: (record: T, videoContext: VideoContext) => Documento,
   projection: Projection,
 ): Promise<number> {
   const documents: Documento[] = [];
   for (const record of records) {
-    const context = getContext(record);
+    const context = await getContext(record);
     if (context) {
       documents.push(toDocument(record, context));
     }
@@ -34,10 +34,11 @@ async function rebuildProjection<T>(
 }
 
 export async function rebuildVideosProjection(channelId: string, deps: RebuildDeps): Promise<number> {
+  const videos = await deps.ledger.listVideos(channelId);
   return rebuildProjection(
     channelId,
-    deps.ledger.listVideos(channelId),
-    (video) => video,
+    videos,
+    async (video) => video,
     toVideoDocument,
     deps.projection,
   );
@@ -49,10 +50,11 @@ export interface RebuildCommentsDeps {
 }
 
 export async function rebuildCommentsProjection(channelId: string, deps: RebuildCommentsDeps): Promise<number> {
+  const comments = await deps.ledger.listComments(channelId);
   return rebuildProjection(
     channelId,
-    deps.ledger.listComments(channelId),
-    (comment) => deps.ledger.videoContext(comment.videoId),
+    comments,
+    async (comment) => deps.ledger.videoContext(comment.videoId),
     toCommentDocument,
     deps.projection,
   );
@@ -64,10 +66,11 @@ export interface RebuildTranscriptsDeps {
 }
 
 export async function rebuildTranscriptsProjection(channelId: string, deps: RebuildTranscriptsDeps): Promise<number> {
+  const segments = await deps.ledger.listTranscriptSegments(channelId);
   return rebuildProjection(
     channelId,
-    deps.ledger.listTranscriptSegments(channelId),
-    (segment) => deps.ledger.videoContext(segment.videoId),
+    segments,
+    async (segment) => deps.ledger.videoContext(segment.videoId),
     toSegmentDocument,
     deps.projection,
   );

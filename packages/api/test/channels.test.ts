@@ -44,7 +44,7 @@ describe("POST /channels", () => {
       status: "queued",
     });
 
-    const channel = ledger.getChannel("UCY8iijN1AkyDCh1Z9akcqUA");
+    const channel = await ledger.getChannel("UCY8iijN1AkyDCh1Z9akcqUA");
     expect(channel?.phases.videos.status).toBe("pending");
     expect(queue.listJobs("UCY8iijN1AkyDCh1Z9akcqUA")).toHaveLength(1);
   });
@@ -107,7 +107,7 @@ describe("GET /channels/:id", () => {
   it("devolve o Canal com status e progresso por Fase", async () => {
     const ledger = makeLedger();
     const app = buildApp(makeConfig(), { ledger, queue: makeQueue(), youtube: makeYouTubeClient(), search: makeSearchClient() });
-    ledger.createChannel({
+    await ledger.createChannel({
       channelId: "UCY8iijN1AkyDCh1Z9akcqUA",
       handle: "@funkyblackcat",
       title: "Funky Black Cat",

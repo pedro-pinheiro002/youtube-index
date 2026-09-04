@@ -34,7 +34,7 @@ export function registerSearchRoutes(
         return reply.code(400).send({ error: `sort inválido: ${sort}` });
       }
 
-      if (!deps.ledger.getChannel(channelId)) {
+      if (!(await deps.ledger.getChannel(channelId))) {
         return reply.code(404).send({ error: "Canal não encontrado" });
       }
 

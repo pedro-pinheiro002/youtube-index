@@ -31,7 +31,7 @@ function makeResults(): SearchResponse {
 describe("GET /search", () => {
   it("passa a Busca para o Meilisearch e devolve Vídeos com highlight", async () => {
     const ledger = makeLedger();
-    ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
+    await ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
     const search = makeSearchClient(makeResults());
     const app = buildApp(makeConfig(), { ledger, queue: makeQueue(), youtube: makeYouTubeClient(), search });
 
@@ -44,7 +44,7 @@ describe("GET /search", () => {
 
   it("passa tipo e sort para o cliente de Busca", async () => {
     const ledger = makeLedger();
-    ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
+    await ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
     const search = makeSearchClient();
     const app = buildApp(makeConfig(), { ledger, queue: makeQueue(), youtube: makeYouTubeClient(), search });
 
@@ -59,7 +59,7 @@ describe("GET /search", () => {
 
   it("retorna Comentários com destaque quando tipo=comment", async () => {
     const ledger = makeLedger();
-    ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
+    await ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
     const commentResults: SearchResponse = {
       hits: [
         {
@@ -138,7 +138,7 @@ describe("GET /search", () => {
 
   it("com um registry fake de um doc type, valida tipo apenas contra esse type", async () => {
     const ledger = makeLedger();
-    ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
+    await ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
     const search = makeSearchClient();
     const fakePhases: readonly PhaseMeta[] = [
       { key: "videos", label: "Vídeos", doc: "video", describe: () => "" },

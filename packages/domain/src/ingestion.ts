@@ -73,15 +73,16 @@ export function createPhases(deps: IngestionDeps): readonly Phase[] {
   const recentWindowDays = deps.recentWindowDays ?? DEFAULT_RECENT_WINDOW_DAYS;
   const log = deps.logger ?? NOOP_LOGGER;
 
-  function phaseStatus(channelId: string, phase: PhaseKey): PhaseStatus {
-    return deps.ledger.getChannel(channelId)?.phases[phase].status ?? "pending";
+  async function phaseStatus(channelId: string, phase: PhaseKey): Promise<PhaseStatus> {
+    const channel = await deps.ledger.getChannel(channelId);
+    return channel?.phases[phase].status ?? "pending";
   }
 
   async function runVideosPhase(channelId: string): Promise<void> {
-    const priorStatus = phaseStatus(channelId, "videos");
+    const priorStatus = await phaseStatus(channelId, "videos");
     const canStopEarly = priorStatus === "completed";
     const uploadsPlaylistId = await deps.youtube.getUploadsPlaylistId(channelId);
-    deps.ledger.updatePhase(channelId, "videos", { status: "running" });
+    await deps.ledger.updatePhase(channelId, "videos", { status: "running" });
     log.event("phase:started", { phase: "videos", channelId });
     log.info(`[${channelId}] fase videos: listando vídeos da playlist ${uploadsPlaylistId}...`);
 
@@ -93,10 +94,10 @@ export function createPhases(deps: IngestionDeps): readonly Phase[] {
       const page = await deps.youtube.listUploads(uploadsPlaylistId, pageToken);
       let stop = false;
       for (const video of page.videos) {
-        const known = deps.ledger.hasVideo(video.id);
+        const known = await deps.ledger.hasVideo(video.id);
         if (canStopEarly && known) {
           done += 1;
-          deps.ledger.updatePhase(channelId, "videos", { done });
+          await deps.ledger.updatePhase(channelId, "videos", { done });
           stop = true;
           break;
         }
@@ -113,7 +114,7 @@ export function createPhases(deps: IngestionDeps): readonly Phase[] {
               likes: stats.likes,
               durationSeconds: stats.durationSeconds,
             };
-            deps.ledger.upsertVideo(record);
+            await deps.ledger.upsertVideo(record);
             records.push(record);
             added += 1;
           } else {
@@ -122,24 +123,25 @@ export function createPhases(deps: IngestionDeps): readonly Phase[] {
           }
         }
         done += 1;
-        deps.ledger.updatePhase(channelId, "videos", { done });
+        await deps.ledger.updatePhase(channelId, "videos", { done });
         log.event("video:processed", { phase: "videos", channelId, videoId: video.id });
       }
       pageToken = stop ? null : page.nextPageToken;
     } while (pageToken);
 
     await deps.projection.addDocuments(channelId, records.map(toVideoDocument));
-    const total = deps.ledger.listVideos(channelId).length;
-    deps.ledger.updatePhase(channelId, "videos", { status: "completed", total });
+    const videos = await deps.ledger.listVideos(channelId);
+    const total = videos.length;
+    await deps.ledger.updatePhase(channelId, "videos", { status: "completed", total });
     log.event("phase:completed", { phase: "videos", channelId, total });
     log.info(`[${channelId}] fase videos concluída: ${done} vídeos (${added} novos)`);
   }
 
   async function runCommentsPhase(channelId: string): Promise<void> {
-    const priorStatus = phaseStatus(channelId, "comments");
+    const priorStatus = await phaseStatus(channelId, "comments");
     const isSync = priorStatus === "completed";
-    const videos = deps.ledger.listVideos(channelId);
-    deps.ledger.updatePhase(channelId, "comments", { status: "running", total: videos.length });
+    const videos = await deps.ledger.listVideos(channelId);
+    await deps.ledger.updatePhase(channelId, "comments", { status: "running", total: videos.length });
     log.event("phase:started", { phase: "comments", channelId });
     log.info(`[${channelId}] fase comments: buscando comentários de ${videos.length} vídeos...`);
 
@@ -152,7 +154,7 @@ export function createPhases(deps: IngestionDeps): readonly Phase[] {
           done += 1;
           continue;
         }
-      } else if (deps.ledger.hasCommentIngestion(video.id)) {
+      } else if (await deps.ledger.hasCommentIngestion(video.id)) {
         done += 1;
         continue;
       }
@@ -164,16 +166,16 @@ export function createPhases(deps: IngestionDeps): readonly Phase[] {
         // os casos varr os Documentos stale do Vídeo no Índice antes de
         // re-projetar — sem isso, o Índice mantém Documentos de Comentários
         // que já saíram e voltariam a aparecer em Buscas.
-        if (isSync && (comments.length === 0 || deps.ledger.hasCommentIngestion(video.id))) {
+        if (isSync && (comments.length === 0 || (await deps.ledger.hasCommentIngestion(video.id)))) {
           await deps.projection.remove(channelId, (hit) => hit.type === "comment" && hit.videoId === video.id);
         }
         if (comments.length === 0) {
-          deps.ledger.deleteCommentsForVideo(video.id);
-          deps.ledger.markCommentAbsence(video.id, "none");
+          await deps.ledger.deleteCommentsForVideo(video.id);
+          await deps.ledger.markCommentAbsence(video.id, "none");
         } else {
-          deps.ledger.deleteCommentsForVideo(video.id);
-          deps.ledger.clearCommentAbsence(video.id);
-          const context = deps.ledger.videoContext(video.id);
+          await deps.ledger.deleteCommentsForVideo(video.id);
+          await deps.ledger.clearCommentAbsence(video.id);
+          const context = await deps.ledger.videoContext(video.id);
           if (!context) {
             throw new Error(`vídeo ${video.id} sem contexto no Ledger`);
           }
@@ -187,7 +189,7 @@ export function createPhases(deps: IngestionDeps): readonly Phase[] {
               likes: comment.likes,
               publishedAt: comment.publishedAt,
             };
-            deps.ledger.upsertComment(record);
+            await deps.ledger.upsertComment(record);
             documents.push(toCommentDocument(record, context));
             added += 1;
           }
@@ -196,24 +198,24 @@ export function createPhases(deps: IngestionDeps): readonly Phase[] {
         if (!(err instanceof CommentsDisabledError)) {
           throw err;
         }
-        deps.ledger.markCommentAbsence(video.id, "disabled");
+        await deps.ledger.markCommentAbsence(video.id, "disabled");
       }
       done += 1;
-      deps.ledger.updatePhase(channelId, "comments", { done });
+      await deps.ledger.updatePhase(channelId, "comments", { done });
       log.event("video:processed", { phase: "comments", channelId, videoId: video.id });
     }
 
     await deps.projection.addDocuments(channelId, documents);
-    deps.ledger.updatePhase(channelId, "comments", { status: "completed", total: videos.length });
+    await deps.ledger.updatePhase(channelId, "comments", { status: "completed", total: videos.length });
     log.event("phase:completed", { phase: "comments", channelId, total: videos.length });
     log.info(`[${channelId}] fase comments concluída: ${done}/${videos.length} vídeos (${added} comentários)`);
   }
 
   async function runTranscriptsPhase(channelId: string): Promise<void> {
-    const priorStatus = phaseStatus(channelId, "transcripts");
+    const priorStatus = await phaseStatus(channelId, "transcripts");
     const isSync = priorStatus === "completed";
-    const videos = deps.ledger.listVideos(channelId);
-    deps.ledger.updatePhase(channelId, "transcripts", { status: "running", total: videos.length });
+    const videos = await deps.ledger.listVideos(channelId);
+    await deps.ledger.updatePhase(channelId, "transcripts", { status: "running", total: videos.length });
     log.event("phase:started", { phase: "transcripts", channelId });
     log.info(`[${channelId}] fase transcripts: buscando transcrições de ${videos.length} vídeos...`);
 
@@ -230,7 +232,7 @@ export function createPhases(deps: IngestionDeps): readonly Phase[] {
           done += 1;
           continue;
         }
-      } else if (deps.ledger.hasTranscriptIngestion(video.id)) {
+      } else if (await deps.ledger.hasTranscriptIngestion(video.id)) {
         done += 1;
         continue;
       }
@@ -239,17 +241,17 @@ export function createPhases(deps: IngestionDeps): readonly Phase[] {
       // no Índice — a Transcrição pode ter sido corrigida (segmentos
       // diferentes) ou removida. Varre antes de qualquer mudança para não
       // misturar Segmentos novos com antigos em Buscas.
-      if (isSync && deps.ledger.hasTranscriptIngestion(video.id)) {
+      if (isSync && (await deps.ledger.hasTranscriptIngestion(video.id))) {
         await deps.projection.remove(channelId, (hit) => hit.type === "segment" && hit.videoId === video.id);
       }
-      deps.ledger.deleteTranscriptSegmentsForVideo(video.id);
+      await deps.ledger.deleteTranscriptSegmentsForVideo(video.id);
       // O contrato discriminado substitui o antigo `Transcript | null`. Os
       // três outcomes são tratados exaustivamente: `transcript` upserta os
       // Segmentos; `absent` marca ausência permanente; `error` lança para a
       // Fase falhar e o Vídeo permanece retriable (sem ausência durável).
       switch (result.kind) {
         case "transcript": {
-          const context = deps.ledger.videoContext(video.id);
+          const context = await deps.ledger.videoContext(video.id);
           if (!context) {
             throw new Error(`vídeo ${video.id} sem contexto no Ledger`);
           }
@@ -262,14 +264,14 @@ export function createPhases(deps: IngestionDeps): readonly Phase[] {
               end: segment.start + segment.duration,
               text: segment.text,
             };
-            deps.ledger.upsertTranscriptSegment(record);
+            await deps.ledger.upsertTranscriptSegment(record);
             documents.push(toSegmentDocument(record, context));
             added += 1;
           }
           break;
         }
         case "absent": {
-          deps.ledger.markTranscriptAbsent(video.id);
+          await deps.ledger.markTranscriptAbsent(video.id);
           break;
         }
         case "error": {
@@ -280,12 +282,12 @@ export function createPhases(deps: IngestionDeps): readonly Phase[] {
         }
       }
       done += 1;
-      deps.ledger.updatePhase(channelId, "transcripts", { done });
+      await deps.ledger.updatePhase(channelId, "transcripts", { done });
       log.event("video:processed", { phase: "transcripts", channelId, videoId: video.id });
     }
 
     await deps.projection.addDocuments(channelId, documents);
-    deps.ledger.updatePhase(channelId, "transcripts", { status: "completed", total: videos.length });
+    await deps.ledger.updatePhase(channelId, "transcripts", { status: "completed", total: videos.length });
     log.event("phase:completed", { phase: "transcripts", channelId, total: videos.length });
     log.info(`[${channelId}] fase transcripts concluída: ${done}/${videos.length} vídeos (${added} segmentos)`);
   }
@@ -303,9 +305,10 @@ export function createIngestion(deps: IngestionDeps, phases: readonly Phase[] = 
   const log = deps.logger ?? NOOP_LOGGER;
 
   async function runJob(channelId: string): Promise<void> {
-    const title = deps.ledger.getChannel(channelId)?.title ?? channelId;
-    deps.ledger.setChannelStatus(channelId, "ingesting");
-    deps.ledger.clearChannelError(channelId);
+    const initial = await deps.ledger.getChannel(channelId);
+    const title = initial?.title ?? channelId;
+    await deps.ledger.setChannelStatus(channelId, "ingesting");
+    await deps.ledger.clearChannelError(channelId);
     log.info(`[${channelId}] ingestão iniciada: "${title}"`);
     let currentPhase: PhaseKey = phases[0]?.key ?? "videos";
     try {
@@ -318,13 +321,13 @@ export function createIngestion(deps: IngestionDeps, phases: readonly Phase[] = 
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       const cause = err instanceof Error ? err : undefined;
-      deps.ledger.setChannelStatus(channelId, "failed");
-      deps.ledger.updatePhase(channelId, currentPhase, { status: "failed" });
-      deps.ledger.setChannelError(channelId, message);
+      await deps.ledger.setChannelStatus(channelId, "failed");
+      await deps.ledger.updatePhase(channelId, currentPhase, { status: "failed" });
+      await deps.ledger.setChannelError(channelId, message);
       log.error(`[${channelId}] fase "${currentPhase}" falhou: ${message}`, cause);
       throw err;
     }
-    deps.ledger.setChannelStatus(channelId, "completed");
+    await deps.ledger.setChannelStatus(channelId, "completed");
     log.info(`[${channelId}] ingestão concluída`);
   }
 

@@ -35,7 +35,7 @@ export function registerChannelRoutes(app: FastifyInstance, deps: ChannelRoutesD
       throw err;
     }
 
-    const channel = deps.ledger.createChannel({
+    const channel = await deps.ledger.createChannel({
       channelId: resolution.channelId,
       handle,
       title: resolution.title,
@@ -49,8 +49,13 @@ export function registerChannelRoutes(app: FastifyInstance, deps: ChannelRoutesD
     return reply.code(201).send(channel);
   });
 
+  app.get("/channels", async (_request, reply) => {
+    const channels = await deps.ledger.listChannels();
+    return reply.send(channels);
+  });
+
   app.get<{ Params: { id: string } }>("/channels/:id", async (request, reply) => {
-    const channel = deps.ledger.getChannel(request.params.id);
+    const channel = await deps.ledger.getChannel(request.params.id);
     if (!channel) {
       return reply.code(404).send({ error: "Canal não encontrado" });
     }

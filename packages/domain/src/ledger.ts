@@ -50,35 +50,46 @@ export interface TranscriptSegmentRecord {
 export type CommentAbsenceReason = "disabled" | "none";
 
 export interface Ledger {
-  createChannel(input: CreateChannelInput): ChannelWithPhases;
-  getChannel(channelId: string): ChannelWithPhases | null;
-  setChannelStatus(channelId: string, status: ChannelStatus): void;
-  setChannelError(channelId: string, message: string): void;
-  clearChannelError(channelId: string): void;
-  updatePhase(channelId: string, phase: PhaseKey, update: Partial<Pick<PhaseProgress, "status" | "done" | "total">>): void;
-  upsertVideo(video: VideoRecord): void;
-  hasVideo(videoId: string): boolean;
-  videoContext(videoId: string): VideoContext | null;
-  listVideos(channelId: string): VideoRecord[];
-  upsertComment(comment: CommentRecord): void;
-  deleteCommentsForVideo(videoId: string): void;
-  hasCommentIngestion(videoId: string): boolean;
-  markCommentAbsence(videoId: string, reason: CommentAbsenceReason): void;
-  clearCommentAbsence(videoId: string): void;
-  listCommentAbsences(channelId: string): string[];
-  listComments(channelId: string): CommentRecord[];
-  upsertTranscriptSegment(segment: TranscriptSegmentRecord): void;
-  hasTranscriptIngestion(videoId: string): boolean;
-  listTranscriptSegments(channelId: string): TranscriptSegmentRecord[];
-  markTranscriptAbsent(videoId: string): void;
-  listTranscriptAbsences(channelId: string): string[];
+  createChannel(input: CreateChannelInput): Promise<ChannelWithPhases>;
+  getChannel(channelId: string): Promise<ChannelWithPhases | null>;
+  listChannels(): Promise<ChannelWithPhases[]>;
+  setChannelStatus(channelId: string, status: ChannelStatus): Promise<void>;
+  setChannelError(channelId: string, message: string): Promise<void>;
+  clearChannelError(channelId: string): Promise<void>;
+  updatePhase(
+    channelId: string,
+    phase: PhaseKey,
+    update: Partial<Pick<PhaseProgress, "status" | "done" | "total">>,
+  ): Promise<void>;
+  /**
+   * Apaga o Canal e, por cascade do schema (channel_phases, ingestion_jobs,
+   * e futuramente videos → comments/segments), todos os dados ligados a ele.
+   * Slice #43 amplia o cascade para cobrir os Documentos em Postgres.
+   */
+  deleteChannel(channelId: string): Promise<void>;
+  upsertVideo(video: VideoRecord): Promise<void>;
+  hasVideo(videoId: string): Promise<boolean>;
+  videoContext(videoId: string): Promise<VideoContext | null>;
+  listVideos(channelId: string): Promise<VideoRecord[]>;
+  upsertComment(comment: CommentRecord): Promise<void>;
+  deleteCommentsForVideo(videoId: string): Promise<void>;
+  hasCommentIngestion(videoId: string): Promise<boolean>;
+  markCommentAbsence(videoId: string, reason: CommentAbsenceReason): Promise<void>;
+  clearCommentAbsence(videoId: string): Promise<void>;
+  listCommentAbsences(channelId: string): Promise<string[]>;
+  listComments(channelId: string): Promise<CommentRecord[]>;
+  upsertTranscriptSegment(segment: TranscriptSegmentRecord): Promise<void>;
+  hasTranscriptIngestion(videoId: string): Promise<boolean>;
+  listTranscriptSegments(channelId: string): Promise<TranscriptSegmentRecord[]>;
+  markTranscriptAbsent(videoId: string): Promise<void>;
+  listTranscriptAbsences(channelId: string): Promise<string[]>;
   /**
    * Apaga todos os Segmentos de Transcrição do Vídeo no Ledger. Usado
    * quando a Transcrição mudou e o Worker precisa re-projetar os
    * Segmentos do zero — sem isso, Segmentos stale permaneceriam no
    * Ledger (e, depois de re-projetar, no Índice).
    */
-  deleteTranscriptSegmentsForVideo(videoId: string): void;
+  deleteTranscriptSegmentsForVideo(videoId: string): Promise<void>;
 }
 
 interface ChannelRow {
@@ -109,7 +120,7 @@ export class SqliteLedger implements Ledger {
     return row !== undefined;
   }
 
-  createChannel(input: CreateChannelInput): ChannelWithPhases {
+  async createChannel(input: CreateChannelInput): Promise<ChannelWithPhases> {
     const now = new Date().toISOString();
     this.db
       .prepare(
@@ -126,14 +137,14 @@ export class SqliteLedger implements Ledger {
       insertPhase.run(input.channelId, phase);
     }
 
-    const channel = this.getChannel(input.channelId);
+    const channel = await this.getChannel(input.channelId);
     if (!channel) {
       throw new Error("channel creation failed");
     }
     return channel;
   }
 
-  getChannel(channelId: string): ChannelWithPhases | null {
+  async getChannel(channelId: string): Promise<ChannelWithPhases | null> {
     const row = this.db
       .prepare("SELECT id, handle, title, status, last_error, created_at FROM channels WHERE id = ?")
       .get(channelId) as unknown as ChannelRow | undefined;
@@ -167,19 +178,41 @@ export class SqliteLedger implements Ledger {
     };
   }
 
-  setChannelStatus(channelId: string, status: ChannelStatus): void {
+  async listChannels(): Promise<ChannelWithPhases[]> {
+    const rows = this.db
+      .prepare("SELECT id FROM channels ORDER BY created_at DESC")
+      .all() as unknown as Array<{ id: string }>;
+    const channels: ChannelWithPhases[] = [];
+    for (const row of rows) {
+      const channel = await this.getChannel(row.id);
+      if (channel) {
+        channels.push(channel);
+      }
+    }
+    return channels;
+  }
+
+  async setChannelStatus(channelId: string, status: ChannelStatus): Promise<void> {
     this.db.prepare("UPDATE channels SET status = ? WHERE id = ?").run(status, channelId);
   }
 
-  setChannelError(channelId: string, message: string): void {
+  async setChannelError(channelId: string, message: string): Promise<void> {
     this.db.prepare("UPDATE channels SET last_error = ? WHERE id = ?").run(message, channelId);
   }
 
-  clearChannelError(channelId: string): void {
+  async clearChannelError(channelId: string): Promise<void> {
     this.db.prepare("UPDATE channels SET last_error = NULL WHERE id = ?").run(channelId);
   }
 
-  updatePhase(channelId: string, phase: PhaseKey, update: Partial<Pick<PhaseProgress, "status" | "done" | "total">>): void {
+  async deleteChannel(channelId: string): Promise<void> {
+    this.db.prepare("DELETE FROM channels WHERE id = ?").run(channelId);
+  }
+
+  async updatePhase(
+    channelId: string,
+    phase: PhaseKey,
+    update: Partial<Pick<PhaseProgress, "status" | "done" | "total">>,
+  ): Promise<void> {
     const sets: string[] = [];
     const values: Array<string | number | null> = [];
     if (update.status !== undefined) {
@@ -203,7 +236,7 @@ export class SqliteLedger implements Ledger {
       .run(...values);
   }
 
-  upsertVideo(video: VideoRecord): void {
+  async upsertVideo(video: VideoRecord): Promise<void> {
     const now = new Date().toISOString();
     this.db
       .prepare(
@@ -223,12 +256,12 @@ export class SqliteLedger implements Ledger {
       );
   }
 
-  hasVideo(videoId: string): boolean {
+  async hasVideo(videoId: string): Promise<boolean> {
     const row = this.db.prepare("SELECT 1 FROM videos WHERE id = ? LIMIT 1").get(videoId);
     return row !== undefined;
   }
 
-  videoContext(videoId: string): VideoContext | null {
+  async videoContext(videoId: string): Promise<VideoContext | null> {
     const row = this.db
       .prepare("SELECT id, title, views, likes, published_at FROM videos WHERE id = ?")
       .get(videoId) as unknown as
@@ -246,7 +279,7 @@ export class SqliteLedger implements Ledger {
     };
   }
 
-  listVideos(channelId: string): VideoRecord[] {
+  async listVideos(channelId: string): Promise<VideoRecord[]> {
     const rows = this.db
       .prepare(
         "SELECT id, channel_id, title, description, published_at, views, likes, duration_seconds " +
@@ -274,7 +307,7 @@ export class SqliteLedger implements Ledger {
     }));
   }
 
-  upsertComment(comment: CommentRecord): void {
+  async upsertComment(comment: CommentRecord): Promise<void> {
     const now = new Date().toISOString();
     this.db
       .prepare(
@@ -284,15 +317,15 @@ export class SqliteLedger implements Ledger {
       .run(comment.id, comment.videoId, comment.author, comment.text, comment.likes, comment.publishedAt, now);
   }
 
-  deleteCommentsForVideo(videoId: string): void {
+  async deleteCommentsForVideo(videoId: string): Promise<void> {
     this.db.prepare("DELETE FROM comments WHERE video_id = ?").run(videoId);
   }
 
-  hasCommentIngestion(videoId: string): boolean {
+  async hasCommentIngestion(videoId: string): Promise<boolean> {
     return this.hasRow("comments", videoId) || this.hasRow("comment_absences", videoId);
   }
 
-  markCommentAbsence(videoId: string, reason: CommentAbsenceReason): void {
+  async markCommentAbsence(videoId: string, reason: CommentAbsenceReason): Promise<void> {
     const now = new Date().toISOString();
     this.db
       .prepare(
@@ -302,11 +335,11 @@ export class SqliteLedger implements Ledger {
       .run(videoId, reason, now);
   }
 
-  clearCommentAbsence(videoId: string): void {
+  async clearCommentAbsence(videoId: string): Promise<void> {
     this.db.prepare("DELETE FROM comment_absences WHERE video_id = ?").run(videoId);
   }
 
-  listCommentAbsences(channelId: string): string[] {
+  async listCommentAbsences(channelId: string): Promise<string[]> {
     const rows = this.db
       .prepare(
         "SELECT a.video_id FROM comment_absences a JOIN videos v ON v.id = a.video_id " +
@@ -316,7 +349,7 @@ export class SqliteLedger implements Ledger {
     return rows.map((row) => row.video_id);
   }
 
-  listComments(channelId: string): CommentRecord[] {
+  async listComments(channelId: string): Promise<CommentRecord[]> {
     const rows = this.db
       .prepare(
         "SELECT c.id, c.video_id, v.channel_id, c.author, c.text, c.likes, c.published_at " +
@@ -343,7 +376,7 @@ export class SqliteLedger implements Ledger {
     }));
   }
 
-  upsertTranscriptSegment(segment: TranscriptSegmentRecord): void {
+  async upsertTranscriptSegment(segment: TranscriptSegmentRecord): Promise<void> {
     this.db
       .prepare(
         "INSERT INTO transcript_segments (video_id, start_seconds, end_seconds, text) " +
@@ -352,11 +385,11 @@ export class SqliteLedger implements Ledger {
       .run(segment.videoId, segment.start, segment.end, segment.text);
   }
 
-  hasTranscriptIngestion(videoId: string): boolean {
+  async hasTranscriptIngestion(videoId: string): Promise<boolean> {
     return this.hasRow("transcript_segments", videoId) || this.hasRow("transcript_absences", videoId);
   }
 
-  listTranscriptSegments(channelId: string): TranscriptSegmentRecord[] {
+  async listTranscriptSegments(channelId: string): Promise<TranscriptSegmentRecord[]> {
     const rows = this.db
       .prepare(
         "SELECT t.video_id, t.start_seconds, t.end_seconds, t.text, v.channel_id " +
@@ -380,18 +413,18 @@ export class SqliteLedger implements Ledger {
     }));
   }
 
-  markTranscriptAbsent(videoId: string): void {
+  async markTranscriptAbsent(videoId: string): Promise<void> {
     const now = new Date().toISOString();
     this.db
       .prepare("INSERT INTO transcript_absences (video_id, created_at) VALUES (?, ?) ON CONFLICT(video_id) DO NOTHING")
       .run(videoId, now);
   }
 
-  deleteTranscriptSegmentsForVideo(videoId: string): void {
+  async deleteTranscriptSegmentsForVideo(videoId: string): Promise<void> {
     this.db.prepare("DELETE FROM transcript_segments WHERE video_id = ?").run(videoId);
   }
 
-  listTranscriptAbsences(channelId: string): string[] {
+  async listTranscriptAbsences(channelId: string): Promise<string[]> {
     const rows = this.db
       .prepare(
         "SELECT a.video_id FROM transcript_absences a JOIN videos v ON v.id = a.video_id " +

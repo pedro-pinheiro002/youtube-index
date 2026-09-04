@@ -25,6 +25,7 @@ export type { Ingestion, IngestionDeps, IngestionLogger } from "./ingestion.js";
 export { createIngestion, createPhases } from "./ingestion.js";
 export type { IngestionQueue } from "./ingestion-queue.js";
 export { SqliteIngestionQueue } from "./ingestion-queue.js";
+export { PostgresIngestionQueue } from "./postgres-queue.js";
 export type {
   CommentSearchDocument,
   Documento,
@@ -61,6 +62,11 @@ export type { MeilisearchConfig } from "./meilisearch.js";
 export { createMeilisearchProjection, MeilisearchError, MeilisearchProjection } from "./meilisearch.js";
 export type { CreateServicesParams, Services, ServicesConfig } from "./services.js";
 export { createServices, MissingConfigError } from "./services.js";
+export type { CreatePgPoolParams } from "./postgres.js";
+export type { Pool, PoolClient, QueryResult, QueryResultRow } from "./postgres.js";
+export { closePgPool, createPgPool } from "./postgres.js";
+export { NotImplementedError, applyPgSchema, POSTGRES_SCHEMA } from "./postgres-schema.js";
+export { PostgresLedger } from "./postgres-ledger.js";
 export type { Transcript, TranscriptFetcher, TranscriptResult, TranscriptSegment } from "./transcripts.js";
 export { YoutubeTranscriptFetcher } from "./transcripts.js";
 export type {

@@ -11,10 +11,10 @@ function makeLedger() {
 
 describe("SqliteLedger", () => {
   describe("createChannel", () => {
-    it("cria um Canal com status queued e as três Fases em pending", () => {
+    it("cria um Canal com status queued e as três Fases em pending", async () => {
       const ledger = makeLedger();
 
-      const channel = ledger.createChannel({
+      const channel = await ledger.createChannel({
         channelId: "UCY8iijN1AkyDCh1Z9akcqUA",
         handle: "@funkyblackcat",
         title: "Funky Black Cat",
@@ -33,7 +33,7 @@ describe("SqliteLedger", () => {
       });
     });
 
-    it("é idempotente quando o mesmo channelId já existe", () => {
+    it("é idempotente quando o mesmo channelId já existe", async () => {
       const ledger = makeLedger();
       const input = {
         channelId: "UCY8iijN1AkyDCh1Z9akcqUA",
@@ -41,24 +41,24 @@ describe("SqliteLedger", () => {
         title: "Funky Black Cat",
       };
 
-      ledger.createChannel(input);
-      const again = ledger.createChannel(input);
+      await ledger.createChannel(input);
+      const again = await ledger.createChannel(input);
 
       expect(again.id).toBe(input.channelId);
     });
   });
 
   describe("getChannel", () => {
-    it("devolve o Canal criado com status e progresso por Fase", () => {
+    it("devolve o Canal criado com status e progresso por Fase", async () => {
       const ledger = makeLedger();
       const input = {
         channelId: "UCY8iijN1AkyDCh1Z9akcqUA",
         handle: "@funkyblackcat",
         title: "Funky Black Cat",
       };
-      ledger.createChannel(input);
+      await ledger.createChannel(input);
 
-      const channel = ledger.getChannel(input.channelId);
+      const channel = await ledger.getChannel(input.channelId);
 
       expect(channel).not.toBeNull();
       expect(channel?.id).toBe(input.channelId);
@@ -66,68 +66,91 @@ describe("SqliteLedger", () => {
       expect(Object.keys(channel?.phases ?? {})).toEqual(["videos", "comments", "transcripts"]);
     });
 
-    it("devolve null para um channelId desconhecido", () => {
+    it("devolve null para um channelId desconhecido", async () => {
       const ledger = makeLedger();
 
-      expect(ledger.getChannel("desconhecido")).toBeNull();
+      expect(await ledger.getChannel("desconhecido")).toBeNull();
     });
   });
 
   describe("setChannelError / clearChannelError", () => {
-    it("grava o motivo da falha e o devolve via getChannel", () => {
+    it("grava o motivo da falha e o devolve via getChannel", async () => {
       const ledger = makeLedger();
-      ledger.createChannel({
+      await ledger.createChannel({
         channelId: CHANNEL_ID,
         handle: "@funkyblackcat",
         title: "Funky Black Cat",
       });
 
-      ledger.setChannelError(CHANNEL_ID, "cota esgotada");
+      await ledger.setChannelError(CHANNEL_ID, "cota esgotada");
 
-      expect(ledger.getChannel(CHANNEL_ID)?.lastError).toBe("cota esgotada");
+      expect((await ledger.getChannel(CHANNEL_ID))?.lastError).toBe("cota esgotada");
     });
 
-    it("clearChannelError volta lastError para null", () => {
+    it("clearChannelError volta lastError para null", async () => {
       const ledger = makeLedger();
-      ledger.createChannel({
+      await ledger.createChannel({
         channelId: CHANNEL_ID,
         handle: "@funkyblackcat",
         title: "Funky Black Cat",
       });
-      ledger.setChannelError(CHANNEL_ID, "cota esgotada");
+      await ledger.setChannelError(CHANNEL_ID, "cota esgotada");
 
-      ledger.clearChannelError(CHANNEL_ID);
+      await ledger.clearChannelError(CHANNEL_ID);
 
-      expect(ledger.getChannel(CHANNEL_ID)?.lastError).toBeNull();
+      expect((await ledger.getChannel(CHANNEL_ID))?.lastError).toBeNull();
     });
 
-    it("criar o Canal de novo zera o lastError", () => {
+    it("criar o Canal de novo zera o lastError", async () => {
       const ledger = makeLedger();
-      ledger.createChannel({
+      await ledger.createChannel({
         channelId: CHANNEL_ID,
         handle: "@funkyblackcat",
         title: "Funky Black Cat",
       });
-      ledger.setChannelError(CHANNEL_ID, "cota esgotada");
+      await ledger.setChannelError(CHANNEL_ID, "cota esgotada");
 
-      ledger.createChannel({
+      await ledger.createChannel({
         channelId: CHANNEL_ID,
         handle: "@funkyblackcat",
         title: "Funky Black Cat",
       });
 
-      expect(ledger.getChannel(CHANNEL_ID)?.lastError).toBeNull();
+      expect((await ledger.getChannel(CHANNEL_ID))?.lastError).toBeNull();
+    });
+  });
+
+  describe("deleteChannel", () => {
+    it("apaga o Canal e o faz sumir de getChannel / listChannels", async () => {
+      const ledger = makeLedger();
+      await ledger.createChannel({
+        channelId: CHANNEL_ID,
+        handle: "@funkyblackcat",
+        title: "Funky Black Cat",
+      });
+      await ledger.updatePhase(CHANNEL_ID, "videos", { status: "completed", done: 2, total: 2 });
+
+      await ledger.deleteChannel(CHANNEL_ID);
+
+      expect(await ledger.getChannel(CHANNEL_ID)).toBeNull();
+      expect(await ledger.listChannels()).toEqual([]);
+    });
+
+    it("não falha quando o channelId não existe (idempotente)", async () => {
+      const ledger = makeLedger();
+
+      await expect(ledger.deleteChannel("desconhecido")).resolves.toBeUndefined();
     });
   });
 
   describe("upsertComment / listComments", () => {
-    function makeChannelWithVideo(ledger: SqliteLedger) {
-      const channel = ledger.createChannel({
+    async function makeChannelWithVideo(ledger: SqliteLedger) {
+      const channel = await ledger.createChannel({
         channelId: CHANNEL_ID,
         handle: "@funkyblackcat",
         title: "Funky Black Cat",
       });
-      ledger.upsertVideo({
+      await ledger.upsertVideo({
         id: "v1",
         channelId: CHANNEL_ID,
         title: "Primeiro vídeo",
@@ -140,10 +163,10 @@ describe("SqliteLedger", () => {
       return channel;
     }
 
-    it("grava um Comentário ligado ao Vídeo e o devolve como linha canônica", () => {
+    it("grava um Comentário ligado ao Vídeo e o devolve como linha canônica", async () => {
       const ledger = makeLedger();
-      makeChannelWithVideo(ledger);
-      ledger.upsertComment({
+      await makeChannelWithVideo(ledger);
+      await ledger.upsertComment({
         id: "c1",
         videoId: "v1",
         channelId: CHANNEL_ID,
@@ -153,7 +176,7 @@ describe("SqliteLedger", () => {
         publishedAt: "2023-01-02T00:00:00Z",
       });
 
-      const comments = ledger.listComments(CHANNEL_ID);
+      const comments = await ledger.listComments(CHANNEL_ID);
 
       expect(comments).toEqual([
         {
@@ -168,9 +191,9 @@ describe("SqliteLedger", () => {
       ]);
     });
 
-    it("é idempotente quando o mesmo id de Comentário é gravado de novo", () => {
+    it("é idempotente quando o mesmo id de Comentário é gravado de novo", async () => {
       const ledger = makeLedger();
-      makeChannelWithVideo(ledger);
+      await makeChannelWithVideo(ledger);
       const comment = {
         id: "c1",
         videoId: "v1",
@@ -181,28 +204,28 @@ describe("SqliteLedger", () => {
         publishedAt: "2023-01-02T00:00:00Z",
       };
 
-      ledger.upsertComment(comment);
-      ledger.upsertComment(comment);
+      await ledger.upsertComment(comment);
+      await ledger.upsertComment(comment);
 
-      expect(ledger.listComments(CHANNEL_ID)).toHaveLength(1);
+      expect(await ledger.listComments(CHANNEL_ID)).toHaveLength(1);
     });
 
-    it("devolve lista vazia para um Canal sem Comentários", () => {
+    it("devolve lista vazia para um Canal sem Comentários", async () => {
       const ledger = makeLedger();
-      makeChannelWithVideo(ledger);
+      await makeChannelWithVideo(ledger);
 
-      expect(ledger.listComments(CHANNEL_ID)).toEqual([]);
+      expect(await ledger.listComments(CHANNEL_ID)).toEqual([]);
     });
   });
 
   describe("upsertTranscriptSegment / listTranscriptSegments", () => {
-    function makeChannelWithVideo(ledger: SqliteLedger) {
-      const channel = ledger.createChannel({
+    async function makeChannelWithVideo(ledger: SqliteLedger) {
+      const channel = await ledger.createChannel({
         channelId: CHANNEL_ID,
         handle: "@funkyblackcat",
         title: "Funky Black Cat",
       });
-      ledger.upsertVideo({
+      await ledger.upsertVideo({
         id: "v1",
         channelId: CHANNEL_ID,
         title: "Primeiro vídeo",
@@ -215,10 +238,10 @@ describe("SqliteLedger", () => {
       return channel;
     }
 
-    it("grava um Segmento ligado ao Vídeo e o devolve como linha canônica", () => {
+    it("grava um Segmento ligado ao Vídeo e o devolve como linha canônica", async () => {
       const ledger = makeLedger();
-      makeChannelWithVideo(ledger);
-      ledger.upsertTranscriptSegment({
+      await makeChannelWithVideo(ledger);
+      await ledger.upsertTranscriptSegment({
         id: "v1:142",
         videoId: "v1",
         channelId: CHANNEL_ID,
@@ -227,7 +250,7 @@ describe("SqliteLedger", () => {
         text: "trecho da transcrição",
       });
 
-      const segments = ledger.listTranscriptSegments(CHANNEL_ID);
+      const segments = await ledger.listTranscriptSegments(CHANNEL_ID);
 
       expect(segments).toEqual([
         {
@@ -241,9 +264,9 @@ describe("SqliteLedger", () => {
       ]);
     });
 
-    it("é idempotente quando o mesmo Segmento (vídeo + start) é gravado de novo", () => {
+    it("é idempotente quando o mesmo Segmento (vídeo + start) é gravado de novo", async () => {
       const ledger = makeLedger();
-      makeChannelWithVideo(ledger);
+      await makeChannelWithVideo(ledger);
       const segment = {
         id: "v1:142",
         videoId: "v1",
@@ -253,28 +276,28 @@ describe("SqliteLedger", () => {
         text: "trecho da transcrição",
       };
 
-      ledger.upsertTranscriptSegment(segment);
-      ledger.upsertTranscriptSegment(segment);
+      await ledger.upsertTranscriptSegment(segment);
+      await ledger.upsertTranscriptSegment(segment);
 
-      expect(ledger.listTranscriptSegments(CHANNEL_ID)).toHaveLength(1);
+      expect(await ledger.listTranscriptSegments(CHANNEL_ID)).toHaveLength(1);
     });
 
-    it("devolve lista vazia para um Canal sem Segmentos", () => {
+    it("devolve lista vazia para um Canal sem Segmentos", async () => {
       const ledger = makeLedger();
-      makeChannelWithVideo(ledger);
+      await makeChannelWithVideo(ledger);
 
-      expect(ledger.listTranscriptSegments(CHANNEL_ID)).toEqual([]);
+      expect(await ledger.listTranscriptSegments(CHANNEL_ID)).toEqual([]);
     });
   });
 
   describe("markTranscriptAbsent / listTranscriptAbsences", () => {
-    function makeChannelWithVideo(ledger: SqliteLedger) {
-      ledger.createChannel({
+    async function makeChannelWithVideo(ledger: SqliteLedger) {
+      await ledger.createChannel({
         channelId: CHANNEL_ID,
         handle: "@funkyblackcat",
         title: "Funky Black Cat",
       });
-      ledger.upsertVideo({
+      await ledger.upsertVideo({
         id: "v1",
         channelId: CHANNEL_ID,
         title: "Primeiro vídeo",
@@ -284,7 +307,7 @@ describe("SqliteLedger", () => {
         likes: 10,
         durationSeconds: 120,
       });
-      ledger.upsertVideo({
+      await ledger.upsertVideo({
         id: "v2",
         channelId: CHANNEL_ID,
         title: "Segundo vídeo",
@@ -296,41 +319,41 @@ describe("SqliteLedger", () => {
       });
     }
 
-    it("marca um Vídeo sem Transcrição e o lista como ausência", () => {
+    it("marca um Vídeo sem Transcrição e o lista como ausência", async () => {
       const ledger = makeLedger();
-      makeChannelWithVideo(ledger);
+      await makeChannelWithVideo(ledger);
 
-      ledger.markTranscriptAbsent("v1");
+      await ledger.markTranscriptAbsent("v1");
 
-      expect(ledger.listTranscriptAbsences(CHANNEL_ID)).toEqual(["v1"]);
+      expect(await ledger.listTranscriptAbsences(CHANNEL_ID)).toEqual(["v1"]);
     });
 
-    it("é idempotente ao marcar a mesma ausência de novo", () => {
+    it("é idempotente ao marcar a mesma ausência de novo", async () => {
       const ledger = makeLedger();
-      makeChannelWithVideo(ledger);
+      await makeChannelWithVideo(ledger);
 
-      ledger.markTranscriptAbsent("v1");
-      ledger.markTranscriptAbsent("v1");
+      await ledger.markTranscriptAbsent("v1");
+      await ledger.markTranscriptAbsent("v1");
 
-      expect(ledger.listTranscriptAbsences(CHANNEL_ID)).toEqual(["v1"]);
+      expect(await ledger.listTranscriptAbsences(CHANNEL_ID)).toEqual(["v1"]);
     });
 
-    it("devolve lista vazia quando nenhum Vídeo está sem Transcrição", () => {
+    it("devolve lista vazia quando nenhum Vídeo está sem Transcrição", async () => {
       const ledger = makeLedger();
-      makeChannelWithVideo(ledger);
+      await makeChannelWithVideo(ledger);
 
-      expect(ledger.listTranscriptAbsences(CHANNEL_ID)).toEqual([]);
+      expect(await ledger.listTranscriptAbsences(CHANNEL_ID)).toEqual([]);
     });
   });
 
   describe("hasVideo", () => {
-    function makeChannelWithVideo(ledger: SqliteLedger) {
-      ledger.createChannel({
+    async function makeChannelWithVideo(ledger: SqliteLedger) {
+      await ledger.createChannel({
         channelId: CHANNEL_ID,
         handle: "@funkyblackcat",
         title: "Funky Black Cat",
       });
-      ledger.upsertVideo({
+      await ledger.upsertVideo({
         id: "v1",
         channelId: CHANNEL_ID,
         title: "Primeiro vídeo",
@@ -342,23 +365,23 @@ describe("SqliteLedger", () => {
       });
     }
 
-    it("devolve true para um Vídeo já gravado e false para um desconhecido", () => {
+    it("devolve true para um Vídeo já gravado e false para um desconhecido", async () => {
       const ledger = makeLedger();
-      makeChannelWithVideo(ledger);
+      await makeChannelWithVideo(ledger);
 
-      expect(ledger.hasVideo("v1")).toBe(true);
-      expect(ledger.hasVideo("v2")).toBe(false);
+      expect(await ledger.hasVideo("v1")).toBe(true);
+      expect(await ledger.hasVideo("v2")).toBe(false);
     });
   });
 
   describe("videoContext", () => {
-    function makeChannelWithVideo(ledger: SqliteLedger) {
-      ledger.createChannel({
+    async function makeChannelWithVideo(ledger: SqliteLedger) {
+      await ledger.createChannel({
         channelId: CHANNEL_ID,
         handle: "@funkyblackcat",
         title: "Funky Black Cat",
       });
-      ledger.upsertVideo({
+      await ledger.upsertVideo({
         id: "v1",
         channelId: CHANNEL_ID,
         title: "Primeiro vídeo",
@@ -370,11 +393,11 @@ describe("SqliteLedger", () => {
       });
     }
 
-    it("devolve o contexto canônico do Vídeo (sem description/durationSeconds)", () => {
+    it("devolve o contexto canônico do Vídeo (sem description/durationSeconds)", async () => {
       const ledger = makeLedger();
-      makeChannelWithVideo(ledger);
+      await makeChannelWithVideo(ledger);
 
-      expect(ledger.videoContext("v1")).toEqual({
+      expect(await ledger.videoContext("v1")).toEqual({
         id: "v1",
         title: "Primeiro vídeo",
         views: 100,
@@ -383,23 +406,23 @@ describe("SqliteLedger", () => {
       });
     });
 
-    it("devolve null para um Vídeo desconhecido", () => {
+    it("devolve null para um Vídeo desconhecido", async () => {
       const ledger = makeLedger();
-      makeChannelWithVideo(ledger);
+      await makeChannelWithVideo(ledger);
 
-      expect(ledger.videoContext("v2")).toBeNull();
+      expect(await ledger.videoContext("v2")).toBeNull();
     });
   });
 
   describe("comment_absences", () => {
-    function makeChannelWithVideos(ledger: SqliteLedger) {
-      ledger.createChannel({
+    async function makeChannelWithVideos(ledger: SqliteLedger) {
+      await ledger.createChannel({
         channelId: CHANNEL_ID,
         handle: "@funkyblackcat",
         title: "Funky Black Cat",
       });
       for (const id of ["v1", "v2"]) {
-        ledger.upsertVideo({
+        await ledger.upsertVideo({
           id,
           channelId: CHANNEL_ID,
           title: `Vídeo ${id}`,
@@ -412,52 +435,52 @@ describe("SqliteLedger", () => {
       }
     }
 
-    it("marca um Vídeo sem Comentários (desativados/vazio) e o lista como ausência", () => {
+    it("marca um Vídeo sem Comentários (desativados/vazio) e o lista como ausência", async () => {
       const ledger = makeLedger();
-      makeChannelWithVideos(ledger);
+      await makeChannelWithVideos(ledger);
 
-      ledger.markCommentAbsence("v1", "disabled");
-      ledger.markCommentAbsence("v2", "none");
+      await ledger.markCommentAbsence("v1", "disabled");
+      await ledger.markCommentAbsence("v2", "none");
 
-      expect(ledger.listCommentAbsences(CHANNEL_ID)).toEqual(["v1", "v2"]);
+      expect(await ledger.listCommentAbsences(CHANNEL_ID)).toEqual(["v1", "v2"]);
     });
 
-    it("é idempotente ao marcar a mesma ausência de novo", () => {
+    it("é idempotente ao marcar a mesma ausência de novo", async () => {
       const ledger = makeLedger();
-      makeChannelWithVideos(ledger);
+      await makeChannelWithVideos(ledger);
 
-      ledger.markCommentAbsence("v1", "disabled");
-      ledger.markCommentAbsence("v1", "disabled");
+      await ledger.markCommentAbsence("v1", "disabled");
+      await ledger.markCommentAbsence("v1", "disabled");
 
-      expect(ledger.listCommentAbsences(CHANNEL_ID)).toEqual(["v1"]);
+      expect(await ledger.listCommentAbsences(CHANNEL_ID)).toEqual(["v1"]);
     });
 
-    it("clearCommentAbsence remove a marcação", () => {
+    it("clearCommentAbsence remove a marcação", async () => {
       const ledger = makeLedger();
-      makeChannelWithVideos(ledger);
-      ledger.markCommentAbsence("v1", "none");
+      await makeChannelWithVideos(ledger);
+      await ledger.markCommentAbsence("v1", "none");
 
-      ledger.clearCommentAbsence("v1");
+      await ledger.clearCommentAbsence("v1");
 
-      expect(ledger.listCommentAbsences(CHANNEL_ID)).toEqual([]);
+      expect(await ledger.listCommentAbsences(CHANNEL_ID)).toEqual([]);
     });
 
-    it("devolve lista vazia quando nenhum Vídeo está com Comentários ausentes", () => {
+    it("devolve lista vazia quando nenhum Vídeo está com Comentários ausentes", async () => {
       const ledger = makeLedger();
-      makeChannelWithVideos(ledger);
+      await makeChannelWithVideos(ledger);
 
-      expect(ledger.listCommentAbsences(CHANNEL_ID)).toEqual([]);
+      expect(await ledger.listCommentAbsences(CHANNEL_ID)).toEqual([]);
     });
   });
 
   describe("hasCommentIngestion", () => {
-    function makeChannelWithVideo(ledger: SqliteLedger) {
-      ledger.createChannel({
+    async function makeChannelWithVideo(ledger: SqliteLedger) {
+      await ledger.createChannel({
         channelId: CHANNEL_ID,
         handle: "@funkyblackcat",
         title: "Funky Black Cat",
       });
-      ledger.upsertVideo({
+      await ledger.upsertVideo({
         id: "v1",
         channelId: CHANNEL_ID,
         title: "Primeiro vídeo",
@@ -469,10 +492,10 @@ describe("SqliteLedger", () => {
       });
     }
 
-    it("devolve true quando o Vídeo tem Comentários gravados", () => {
+    it("devolve true quando o Vídeo tem Comentários gravados", async () => {
       const ledger = makeLedger();
-      makeChannelWithVideo(ledger);
-      ledger.upsertComment({
+      await makeChannelWithVideo(ledger);
+      await ledger.upsertComment({
         id: "c1",
         videoId: "v1",
         channelId: CHANNEL_ID,
@@ -482,35 +505,35 @@ describe("SqliteLedger", () => {
         publishedAt: "2023-01-02T00:00:00Z",
       });
 
-      expect(ledger.hasCommentIngestion("v1")).toBe(true);
+      expect(await ledger.hasCommentIngestion("v1")).toBe(true);
     });
 
-    it("devolve true quando o Vídeo tem ausência de Comentários marcada", () => {
+    it("devolve true quando o Vídeo tem ausência de Comentários marcada", async () => {
       const ledger = makeLedger();
-      makeChannelWithVideo(ledger);
-      ledger.markCommentAbsence("v1", "disabled");
+      await makeChannelWithVideo(ledger);
+      await ledger.markCommentAbsence("v1", "disabled");
 
-      expect(ledger.hasCommentIngestion("v1")).toBe(true);
+      expect(await ledger.hasCommentIngestion("v1")).toBe(true);
     });
 
-    it("devolve false quando nada foi ingerido para o Vídeo", () => {
+    it("devolve false quando nada foi ingerido para o Vídeo", async () => {
       const ledger = makeLedger();
-      makeChannelWithVideo(ledger);
+      await makeChannelWithVideo(ledger);
 
-      expect(ledger.hasCommentIngestion("v1")).toBe(false);
+      expect(await ledger.hasCommentIngestion("v1")).toBe(false);
     });
   });
 
   describe("deleteCommentsForVideo", () => {
-    it("remove apenas os Comentários do Vídeo indicado", () => {
+    it("remove apenas os Comentários do Vídeo indicado", async () => {
       const ledger = makeLedger();
-      ledger.createChannel({
+      await ledger.createChannel({
         channelId: CHANNEL_ID,
         handle: "@funkyblackcat",
         title: "Funky Black Cat",
       });
       for (const id of ["v1", "v2"]) {
-        ledger.upsertVideo({
+        await ledger.upsertVideo({
           id,
           channelId: CHANNEL_ID,
           title: `Vídeo ${id}`,
@@ -521,7 +544,7 @@ describe("SqliteLedger", () => {
           durationSeconds: 120,
         });
       }
-      ledger.upsertComment({
+      await ledger.upsertComment({
         id: "c1",
         videoId: "v1",
         channelId: CHANNEL_ID,
@@ -530,7 +553,7 @@ describe("SqliteLedger", () => {
         likes: 1,
         publishedAt: "2023-01-02T00:00:00Z",
       });
-      ledger.upsertComment({
+      await ledger.upsertComment({
         id: "c2",
         videoId: "v2",
         channelId: CHANNEL_ID,
@@ -540,20 +563,20 @@ describe("SqliteLedger", () => {
         publishedAt: "2023-01-03T00:00:00Z",
       });
 
-      ledger.deleteCommentsForVideo("v1");
+      await ledger.deleteCommentsForVideo("v1");
 
-      expect(ledger.listComments(CHANNEL_ID).map((c) => c.id)).toEqual(["c2"]);
+      expect((await ledger.listComments(CHANNEL_ID)).map((c) => c.id)).toEqual(["c2"]);
     });
   });
 
   describe("hasTranscriptIngestion", () => {
-    function makeChannelWithVideo(ledger: SqliteLedger) {
-      ledger.createChannel({
+    async function makeChannelWithVideo(ledger: SqliteLedger) {
+      await ledger.createChannel({
         channelId: CHANNEL_ID,
         handle: "@funkyblackcat",
         title: "Funky Black Cat",
       });
-      ledger.upsertVideo({
+      await ledger.upsertVideo({
         id: "v1",
         channelId: CHANNEL_ID,
         title: "Primeiro vídeo",
@@ -565,10 +588,10 @@ describe("SqliteLedger", () => {
       });
     }
 
-    it("devolve true quando o Vídeo tem Segmentos de Transcrição gravados", () => {
+    it("devolve true quando o Vídeo tem Segmentos de Transcrição gravados", async () => {
       const ledger = makeLedger();
-      makeChannelWithVideo(ledger);
-      ledger.upsertTranscriptSegment({
+      await makeChannelWithVideo(ledger);
+      await ledger.upsertTranscriptSegment({
         id: "v1:0",
         videoId: "v1",
         channelId: CHANNEL_ID,
@@ -577,22 +600,22 @@ describe("SqliteLedger", () => {
         text: "trecho",
       });
 
-      expect(ledger.hasTranscriptIngestion("v1")).toBe(true);
+      expect(await ledger.hasTranscriptIngestion("v1")).toBe(true);
     });
 
-    it("devolve true quando o Vídeo tem ausência de Transcrição marcada", () => {
+    it("devolve true quando o Vídeo tem ausência de Transcrição marcada", async () => {
       const ledger = makeLedger();
-      makeChannelWithVideo(ledger);
-      ledger.markTranscriptAbsent("v1");
+      await makeChannelWithVideo(ledger);
+      await ledger.markTranscriptAbsent("v1");
 
-      expect(ledger.hasTranscriptIngestion("v1")).toBe(true);
+      expect(await ledger.hasTranscriptIngestion("v1")).toBe(true);
     });
 
-    it("devolve false quando nada foi ingerido para o Vídeo", () => {
+    it("devolve false quando nada foi ingerido para o Vídeo", async () => {
       const ledger = makeLedger();
-      makeChannelWithVideo(ledger);
+      await makeChannelWithVideo(ledger);
 
-      expect(ledger.hasTranscriptIngestion("v1")).toBe(false);
+      expect(await ledger.hasTranscriptIngestion("v1")).toBe(false);
     });
   });
 });
