@@ -1,11 +1,15 @@
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createDatabase } from "../src/schema.js";
 import { SqliteLedger } from "../src/ledger.js";
 import { SqliteIngestionQueue } from "../src/ingestion-queue.js";
+import { PostgresIngestionQueue, PostgresLedger } from "../src/index.js";
+import { applyPgSchema } from "../src/postgres-schema.js";
+import { closePgPool, createPgPool } from "../src/postgres.js";
 import { YouTubeDataApiClient } from "../src/youtube.js";
 import { YoutubeTranscriptFetcher } from "../src/transcripts.js";
 import { MeilisearchProjection } from "../src/meilisearch.js";
 import { createServices, MissingConfigError } from "../src/services.js";
+import type { Pool } from "pg";
 
 const CONFIG = {
   youtubeApiKey: "test-key",
@@ -101,5 +105,34 @@ describe("createServices", () => {
         fetchImpl: fakeFetch as typeof fetch,
       }),
     ).rejects.toBeInstanceOf(MissingConfigError);
+  });
+});
+
+// Pool Postgres compartilhado entre os testes da branch pg.Pool. O
+// schema já é aplicado pelos outros arquivos de teste do pacote, mas
+// `applyPgSchema` é idempotente e barato, então chamamos aqui também.
+const POSTGRES_URL =
+  process.env.DATABASE_URL ?? "postgres://postgres:postgres@localhost:5432/youtube_index";
+let pgPool: Pool;
+
+beforeAll(async () => {
+  pgPool = createPgPool({ databaseUrl: POSTGRES_URL });
+  await applyPgSchema(pgPool);
+});
+
+afterAll(async () => {
+  await closePgPool(pgPool);
+});
+
+describe("createServices com pg.Pool", () => {
+  it("seleciona PostgresLedger e PostgresIngestionQueue quando recebe pg.Pool", async () => {
+    const services = await createServices({
+      db: pgPool,
+      config: CONFIG,
+      fetchImpl: fakeFetch as typeof fetch,
+    });
+
+    expect(services.ledger).toBeInstanceOf(PostgresLedger);
+    expect(services.queue).toBeInstanceOf(PostgresIngestionQueue);
   });
 });

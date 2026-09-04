@@ -40,7 +40,7 @@ export function registerChannelRoutes(app: FastifyInstance, deps: ChannelRoutesD
       handle,
       title: resolution.title,
     });
-    const job = deps.queue.enqueue(channel.id);
+    const job = await deps.queue.enqueue(channel.id);
     request.log.info(
       { handle, channelId: channel.id, jobId: job.id, title: channel.title },
       "canal criado e job de ingestão enfileirado",

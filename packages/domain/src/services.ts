@@ -48,13 +48,14 @@ export interface CreateServicesParams {
 }
 
 /**
- * Detecta `pg.Pool` pelo nome da construtora. Node-postgres expõe o nome
- * "Pool" no construtor; rodar `instanceof pg.Pool` também funcionaria mas
- * exigiria importar `pg` em runtime (a forma atual evita isso, já que o
- * guard é só para `selectLedger`/`selectQueue`).
+ * Detecta `pg.Pool` por duck typing em vez de comparar `constructor.name`
+ * (que na versão ESM de `node-postgres` retorna `"BoundPool"`, não
+ * `"Pool"`) ou `instanceof pg.Pool` (que exigiria importar `pg` em
+ * runtime). `DatabaseSync` (node:sqlite) não tem `.query`/`connect`,
+ * então a presença do método basta.
  */
 function isPgPool(db: DatabaseSync | pg.Pool): db is pg.Pool {
-  return (db as { constructor?: { name?: string } }).constructor?.name === "Pool";
+  return typeof (db as { query?: unknown }).query === "function";
 }
 
 function selectLedger(db: DatabaseSync | pg.Pool): Ledger {
@@ -66,11 +67,7 @@ function selectLedger(db: DatabaseSync | pg.Pool): Ledger {
 
 function selectQueue(db: DatabaseSync | pg.Pool): IngestionQueue {
   if (isPgPool(db)) {
-    // Stub: a Fila Postgres-backed entra em #44. Cada método lança
-    // NotImplementedError para deixar o caller saber exatamente o que
-    // esperar (em vez de misturar SQLite sobre Pool, que falharia de
-    // forma confusa em runtime).
-    return new PostgresIngestionQueue();
+    return new PostgresIngestionQueue(db);
   }
   return new SqliteIngestionQueue(db);
 }

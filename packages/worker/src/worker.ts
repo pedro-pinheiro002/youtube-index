@@ -6,15 +6,15 @@ export interface WorkerDeps {
 }
 
 export async function pollOnce(deps: WorkerDeps): Promise<boolean> {
-  const job = deps.queue.claimNext();
+  const job = await deps.queue.claimNext();
   if (!job) {
     return false;
   }
   try {
     await deps.ingestion.runJob(job.channelId);
-    deps.queue.complete(job.id);
+    await deps.queue.complete(job.id);
   } catch (err) {
-    deps.queue.fail(job.id);
+    await deps.queue.fail(job.id);
     const message = err instanceof Error ? err.message : String(err);
     throw new Error(`job ${job.id} do canal ${job.channelId} falhou: ${message}`, { cause: err });
   }

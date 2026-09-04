@@ -46,7 +46,7 @@ describe("POST /channels", () => {
 
     const channel = await ledger.getChannel("UCY8iijN1AkyDCh1Z9akcqUA");
     expect(channel?.phases.videos.status).toBe("pending");
-    expect(queue.listJobs("UCY8iijN1AkyDCh1Z9akcqUA")).toHaveLength(1);
+    expect(await queue.listJobs("UCY8iijN1AkyDCh1Z9akcqUA")).toHaveLength(1);
   });
 
   it("responde 201 criando o Canal mesmo quando o handle já foi resolvido antes", async () => {
@@ -70,7 +70,7 @@ describe("POST /channels", () => {
     expect(first.statusCode).toBe(201);
     expect(second.statusCode).toBe(201);
     expect(second.json()).toMatchObject({ id: "UCY8iijN1AkyDCh1Z9akcqUA" });
-    expect(queue.listJobs("UCY8iijN1AkyDCh1Z9akcqUA")).toHaveLength(2);
+    expect(await queue.listJobs("UCY8iijN1AkyDCh1Z9akcqUA")).toHaveLength(2);
   });
 
   it("responde 404 quando o handle não é resolvido", async () => {

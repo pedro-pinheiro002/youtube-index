@@ -40,16 +40,16 @@ const YOUTUBE_TITLE = "Canal do Postgres Slice";
 function makeStubQueue(): IngestionQueue {
   let nextId = 1;
   return {
-    enqueue: (channelId: string): Job => ({
+    enqueue: async (channelId: string): Promise<Job> => ({
       id: nextId++,
       channelId,
       status: "queued",
       createdAt: new Date().toISOString(),
     }),
-    claimNext: () => null,
-    complete: () => undefined,
-    fail: () => undefined,
-    listJobs: () => [],
+    claimNext: async () => null,
+    complete: async () => undefined,
+    fail: async () => undefined,
+    listJobs: async () => [],
   };
 }
 
