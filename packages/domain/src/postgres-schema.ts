@@ -2,7 +2,7 @@ import type pg from "pg";
 
 /**
  * Erro lançado pelos métodos do PostgresLedger fora do escopo do slice
- * atual (#42). Aponta para a issue que vai implementar a operação,
+ * atual. Aponta para a issue que vai implementar a operação,
  * permitindo que o caller saiba o que esperar em vez de receber um erro
  * genérico.
  */
@@ -18,10 +18,19 @@ export class NotImplementedError extends Error {
 }
 
 /**
- * Tabelas mínimas necessárias para o slice "channel lifecycle" (#42).
- * Cobrem o ciclo de vida do Canal (criação, fases de ingestão) e a fila
- * de ingestão. Tabelas adicionais (vídeos, comentários, segmentos)
- * serão adicionadas nos próximos slices do parent #41.
+ * Tabelas do PostgresLedger. Espelham as tabelas SQLite definidas em
+ * `schema.ts` (mesmas colunas e constraints, tipos Postgres apropriados).
+ *
+ * `videos`, `comments` e `transcript_segments` ganham uma coluna
+ * `fts tsvector` (slice #46 vai popular essa coluna em transação com o
+ * INSERT). A coluna já existe aqui para evitar migração posterior; o
+ * slice #43 só grava a coluna em NULL — sem `fts`, as buscas do slice
+ * #45 não retornam nada até #46 popular.
+ *
+ * Cada comando é separado por `;` e enviado individualmente para
+ * garantir que o Postgres interprete cada `CREATE TABLE IF NOT EXISTS`
+ * como uma sentença autocontida (um `db.exec(...)` multi-statement
+ * exigiria um client conectado em transação explícita).
  */
 export const POSTGRES_SCHEMA = `
 CREATE TABLE IF NOT EXISTS channels (
@@ -42,6 +51,50 @@ CREATE TABLE IF NOT EXISTS channel_phases (
   PRIMARY KEY (channel_id, phase)
 );
 
+CREATE TABLE IF NOT EXISTS videos (
+  id TEXT PRIMARY KEY,
+  channel_id TEXT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  description TEXT,
+  published_at TEXT,
+  views BIGINT,
+  likes BIGINT,
+  duration_seconds INTEGER,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS comments (
+  id TEXT PRIMARY KEY,
+  video_id TEXT NOT NULL REFERENCES videos(id) ON DELETE CASCADE,
+  author TEXT NOT NULL,
+  text TEXT NOT NULL,
+  likes INTEGER NOT NULL DEFAULT 0,
+  published_at TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS transcript_segments (
+  id BIGSERIAL PRIMARY KEY,
+  video_id TEXT NOT NULL REFERENCES videos(id) ON DELETE CASCADE,
+  start_seconds DOUBLE PRECISION NOT NULL,
+  end_seconds DOUBLE PRECISION NOT NULL,
+  text TEXT NOT NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS transcript_segments_video_start
+  ON transcript_segments(video_id, start_seconds);
+
+CREATE TABLE IF NOT EXISTS transcript_absences (
+  video_id TEXT PRIMARY KEY REFERENCES videos(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS comment_absences (
+  video_id TEXT PRIMARY KEY REFERENCES videos(id) ON DELETE CASCADE,
+  reason TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS ingestion_jobs (
   id BIGSERIAL PRIMARY KEY,
   channel_id TEXT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
@@ -51,12 +104,7 @@ CREATE TABLE IF NOT EXISTS ingestion_jobs (
 `;
 
 /**
- * Cria as tabelas mínimas do PostgresLedger idempotentemente. Cada
- * comando é separado por `;` e enviado individualmente para garantir
- * que o Postgres interprete cada `CREATE TABLE IF NOT EXISTS` como uma
- * sentença autocontida. Um único `db.exec(...)` (multi-statement)
- * exigiria um client conectado em transação explícita, então separamos
- * para usar o `pool.query` direto.
+ * Cria as tabelas do PostgresLedger idempotentemente.
  */
 export async function applyPgSchema(pool: pg.Pool): Promise<void> {
   for (const statement of POSTGRES_SCHEMA.split(/;\s*\n/).map((s) => s.trim()).filter((s) => s.length > 0)) {

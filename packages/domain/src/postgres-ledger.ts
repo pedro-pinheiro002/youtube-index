@@ -10,7 +10,6 @@ import type {
   VideoContext,
   VideoRecord,
 } from "./ledger.js";
-import { NotImplementedError } from "./postgres-schema.js";
 
 interface ChannelRow {
   id: string;
@@ -28,13 +27,48 @@ interface PhaseRow {
   total: number | null;
 }
 
+interface VideoRow {
+  id: string;
+  channel_id: string;
+  title: string;
+  description: string;
+  published_at: string;
+  views: number;
+  likes: number;
+  duration_seconds: number;
+}
+
+interface CommentRow {
+  id: string;
+  video_id: string;
+  channel_id: string;
+  author: string;
+  text: string;
+  likes: number;
+  published_at: string;
+}
+
+interface TranscriptSegmentRow {
+  video_id: string;
+  channel_id: string;
+  start_seconds: number;
+  end_seconds: number;
+  text: string;
+}
+
+interface AbsenceRow {
+  video_id: string;
+  reason?: string;
+}
+
 /**
- * Implementação Postgres do Ledger para o slice "channel lifecycle".
- * Os métodos de Canal (createChannel, getChannel, listChannels,
- * setChannelStatus, setChannelError, clearChannelError, updatePhase) já
- * escrevem e leem do Postgres; os demais métodos da interface Ledger
- * lançam `NotImplementedError` e serão preenchidos nos próximos slices
- * (issue #43 cobre o Ledger completo de Vídeos/Comentários/Segmentos).
+ * Implementação Postgres do Ledger. Espelha `SqliteLedger` na superfície
+ * — mesmos métodos, mesma semântica de idempotência e ordenação —
+ * escrevendo contra um `pg.Pool` parametrizado. Cada operação é uma
+ * transação implícita por query (Postgres auto-commita cada statement
+ * fora de BEGIN/COMMIT explícito), e os métodos que precisam de
+ * múltiplas operações (`createChannel`, `updatePhase` parcial) usam
+ * `client.query("BEGIN")` / `COMMIT` via `pool.connect()`.
  */
 export class PostgresLedger implements Ledger {
   constructor(private readonly pool: pg.Pool) {}
@@ -145,8 +179,8 @@ export class PostgresLedger implements Ledger {
   }
 
   async deleteChannel(channelId: string): Promise<void> {
-    // O cascade do schema apaga channel_phases e ingestion_jobs. videos
-    // e derivados só existem a partir de #43.
+    // Cascade apaga channel_phases, ingestion_jobs, videos, comments,
+    // transcript_segments, transcript_absences e comment_absences.
     await this.pool.query(`DELETE FROM channels WHERE id = $1`, [channelId]);
   }
 
@@ -179,59 +213,193 @@ export class PostgresLedger implements Ledger {
     );
   }
 
-  // ---------------------------------------------------------------------------
-  // Métodos fora do escopo deste slice (issue #42). Serão preenchidos em #43+.
-  // ---------------------------------------------------------------------------
+  async upsertVideo(video: VideoRecord): Promise<void> {
+    await this.pool.query(
+      `INSERT INTO videos (id, channel_id, title, description, published_at, views, likes, duration_seconds)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       ON CONFLICT (id) DO NOTHING`,
+      [
+        video.id,
+        video.channelId,
+        video.title,
+        video.description,
+        video.publishedAt,
+        video.views,
+        video.likes,
+        video.durationSeconds,
+      ],
+    );
+  }
 
-  async upsertVideo(_video: VideoRecord): Promise<void> {
-    throw new NotImplementedError("upsertVideo", "PostgresLedger", "#43");
+  async hasVideo(videoId: string): Promise<boolean> {
+    const res = await this.pool.query(`SELECT 1 FROM videos WHERE id = $1 LIMIT 1`, [videoId]);
+    return (res.rowCount ?? 0) > 0;
   }
-  async hasVideo(_videoId: string): Promise<boolean> {
-    throw new NotImplementedError("hasVideo", "PostgresLedger", "#43");
+
+  async videoContext(videoId: string): Promise<VideoContext | null> {
+    const row = (await this.pool
+      .query(
+        `SELECT id, title, views, likes, published_at FROM videos WHERE id = $1`,
+        [videoId],
+      )
+      .then((res) => res.rows[0])) as
+      | { id: string; title: string; views: number; likes: number; published_at: string }
+      | undefined;
+    if (!row) {
+      return null;
+    }
+    return {
+      id: row.id,
+      title: row.title,
+      views: row.views,
+      likes: row.likes,
+      publishedAt: row.published_at,
+    };
   }
-  async videoContext(_videoId: string): Promise<VideoContext | null> {
-    throw new NotImplementedError("videoContext", "PostgresLedger", "#43");
+
+  async listVideos(channelId: string): Promise<VideoRecord[]> {
+    const rows = (await this.pool.query(
+      `SELECT id, channel_id, title, description, published_at, views, likes, duration_seconds
+       FROM videos WHERE channel_id = $1
+       ORDER BY published_at DESC`,
+      [channelId],
+    ).then((res) => res.rows)) as VideoRow[];
+    return rows.map((row) => ({
+      id: row.id,
+      channelId: row.channel_id,
+      title: row.title,
+      description: row.description,
+      publishedAt: row.published_at,
+      views: row.views,
+      likes: row.likes,
+      durationSeconds: row.duration_seconds,
+    }));
   }
-  async listVideos(_channelId: string): Promise<VideoRecord[]> {
-    throw new NotImplementedError("listVideos", "PostgresLedger", "#43");
+
+  async upsertComment(comment: CommentRecord): Promise<void> {
+    await this.pool.query(
+      `INSERT INTO comments (id, video_id, author, text, likes, published_at)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       ON CONFLICT (id) DO NOTHING`,
+      [comment.id, comment.videoId, comment.author, comment.text, comment.likes, comment.publishedAt],
+    );
   }
-  async upsertComment(_comment: CommentRecord): Promise<void> {
-    throw new NotImplementedError("upsertComment", "PostgresLedger", "#43");
+
+  async deleteCommentsForVideo(videoId: string): Promise<void> {
+    await this.pool.query(`DELETE FROM comments WHERE video_id = $1`, [videoId]);
   }
-  async deleteCommentsForVideo(_videoId: string): Promise<void> {
-    throw new NotImplementedError("deleteCommentsForVideo", "PostgresLedger", "#43");
+
+  async hasCommentIngestion(videoId: string): Promise<boolean> {
+    // Duas queries separadas evita o requisito de parênteses nos
+    // operandos do UNION (cada `SELECT … LIMIT 1` precisa do próprio
+    // escopo) e mantém o plano simples para cada índice.
+    const [hasComment, hasAbsence] = await Promise.all([
+      this.pool.query(`SELECT 1 FROM comments WHERE video_id = $1 LIMIT 1`, [videoId]),
+      this.pool.query(`SELECT 1 FROM comment_absences WHERE video_id = $1 LIMIT 1`, [videoId]),
+    ]);
+    return ((hasComment.rowCount ?? 0) + (hasAbsence.rowCount ?? 0)) > 0;
   }
-  async hasCommentIngestion(_videoId: string): Promise<boolean> {
-    throw new NotImplementedError("hasCommentIngestion", "PostgresLedger", "#43");
+
+  async markCommentAbsence(videoId: string, reason: CommentAbsenceReason): Promise<void> {
+    await this.pool.query(
+      `INSERT INTO comment_absences (video_id, reason)
+       VALUES ($1, $2)
+       ON CONFLICT (video_id) DO UPDATE SET reason = EXCLUDED.reason`,
+      [videoId, reason],
+    );
   }
-  async markCommentAbsence(_videoId: string, _reason: CommentAbsenceReason): Promise<void> {
-    throw new NotImplementedError("markCommentAbsence", "PostgresLedger", "#43");
+
+  async clearCommentAbsence(videoId: string): Promise<void> {
+    await this.pool.query(`DELETE FROM comment_absences WHERE video_id = $1`, [videoId]);
   }
-  async clearCommentAbsence(_videoId: string): Promise<void> {
-    throw new NotImplementedError("clearCommentAbsence", "PostgresLedger", "#43");
+
+  async listCommentAbsences(channelId: string): Promise<string[]> {
+    const rows = (await this.pool.query(
+      `SELECT a.video_id FROM comment_absences a
+       JOIN videos v ON v.id = a.video_id
+       WHERE v.channel_id = $1
+       ORDER BY a.video_id`,
+      [channelId],
+    ).then((res) => res.rows)) as AbsenceRow[];
+    return rows.map((row) => row.video_id);
   }
-  async listCommentAbsences(_channelId: string): Promise<string[]> {
-    throw new NotImplementedError("listCommentAbsences", "PostgresLedger", "#43");
+
+  async listComments(channelId: string): Promise<CommentRecord[]> {
+    const rows = (await this.pool.query(
+      `SELECT c.id, c.video_id, v.channel_id, c.author, c.text, c.likes, c.published_at
+       FROM comments c JOIN videos v ON v.id = c.video_id
+       WHERE v.channel_id = $1
+       ORDER BY c.published_at DESC`,
+      [channelId],
+    ).then((res) => res.rows)) as CommentRow[];
+    return rows.map((row) => ({
+      id: row.id,
+      videoId: row.video_id,
+      channelId: row.channel_id,
+      author: row.author,
+      text: row.text,
+      likes: row.likes,
+      publishedAt: row.published_at,
+    }));
   }
-  async listComments(_channelId: string): Promise<CommentRecord[]> {
-    throw new NotImplementedError("listComments", "PostgresLedger", "#43");
+
+  async upsertTranscriptSegment(segment: TranscriptSegmentRecord): Promise<void> {
+    await this.pool.query(
+      `INSERT INTO transcript_segments (video_id, start_seconds, end_seconds, text)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (video_id, start_seconds) DO NOTHING`,
+      [segment.videoId, segment.start, segment.end, segment.text],
+    );
   }
-  async upsertTranscriptSegment(_segment: TranscriptSegmentRecord): Promise<void> {
-    throw new NotImplementedError("upsertTranscriptSegment", "PostgresLedger", "#43");
+
+  async hasTranscriptIngestion(videoId: string): Promise<boolean> {
+    // Veja `hasCommentIngestion` — duas queries em paralelo.
+    const [hasSegment, hasAbsence] = await Promise.all([
+      this.pool.query(`SELECT 1 FROM transcript_segments WHERE video_id = $1 LIMIT 1`, [videoId]),
+      this.pool.query(`SELECT 1 FROM transcript_absences WHERE video_id = $1 LIMIT 1`, [videoId]),
+    ]);
+    return ((hasSegment.rowCount ?? 0) + (hasAbsence.rowCount ?? 0)) > 0;
   }
-  async hasTranscriptIngestion(_videoId: string): Promise<boolean> {
-    throw new NotImplementedError("hasTranscriptIngestion", "PostgresLedger", "#43");
+
+  async listTranscriptSegments(channelId: string): Promise<TranscriptSegmentRecord[]> {
+    const rows = (await this.pool.query(
+      `SELECT t.video_id, t.start_seconds, t.end_seconds, t.text, v.channel_id
+       FROM transcript_segments t JOIN videos v ON v.id = t.video_id
+       WHERE v.channel_id = $1
+       ORDER BY t.start_seconds`,
+      [channelId],
+    ).then((res) => res.rows)) as TranscriptSegmentRow[];
+    return rows.map((row) => ({
+      id: `${row.video_id}:${row.start_seconds}`,
+      videoId: row.video_id,
+      channelId: row.channel_id,
+      start: row.start_seconds,
+      end: row.end_seconds,
+      text: row.text,
+    }));
   }
-  async listTranscriptSegments(_channelId: string): Promise<TranscriptSegmentRecord[]> {
-    throw new NotImplementedError("listTranscriptSegments", "PostgresLedger", "#43");
+
+  async markTranscriptAbsent(videoId: string): Promise<void> {
+    await this.pool.query(
+      `INSERT INTO transcript_absences (video_id)
+       VALUES ($1)
+       ON CONFLICT (video_id) DO NOTHING`,
+      [videoId],
+    );
   }
-  async markTranscriptAbsent(_videoId: string): Promise<void> {
-    throw new NotImplementedError("markTranscriptAbsent", "PostgresLedger", "#43");
+
+  async listTranscriptAbsences(channelId: string): Promise<string[]> {
+    const rows = (await this.pool.query(
+      `SELECT a.video_id FROM transcript_absences a
+       JOIN videos v ON v.id = a.video_id
+       WHERE v.channel_id = $1
+       ORDER BY a.video_id`,
+      [channelId],
+    ).then((res) => res.rows)) as AbsenceRow[];
+    return rows.map((row) => row.video_id);
   }
-  async listTranscriptAbsences(_channelId: string): Promise<string[]> {
-    throw new NotImplementedError("listTranscriptAbsences", "PostgresLedger", "#43");
-  }
-  async deleteTranscriptSegmentsForVideo(_videoId: string): Promise<void> {
-    throw new NotImplementedError("deleteTranscriptSegmentsForVideo", "PostgresLedger", "#43");
+
+  async deleteTranscriptSegmentsForVideo(videoId: string): Promise<void> {
+    await this.pool.query(`DELETE FROM transcript_segments WHERE video_id = $1`, [videoId]);
   }
 }
