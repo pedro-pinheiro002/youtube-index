@@ -67,6 +67,7 @@ export type { Pool, PoolClient, QueryResult, QueryResultRow } from "./postgres.j
 export { closePgPool, createPgPool } from "./postgres.js";
 export { NotImplementedError, applyPgSchema, POSTGRES_SCHEMA } from "./postgres-schema.js";
 export { PostgresLedger } from "./postgres-ledger.js";
+export { PostgresSearchProjection } from "./postgres-search.js";
 export type { Transcript, TranscriptFetcher, TranscriptResult, TranscriptSegment } from "./transcripts.js";
 export { YoutubeTranscriptFetcher } from "./transcripts.js";
 export type {

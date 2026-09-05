@@ -21,11 +21,14 @@ export class NotImplementedError extends Error {
  * Tabelas do PostgresLedger. Espelham as tabelas SQLite definidas em
  * `schema.ts` (mesmas colunas e constraints, tipos Postgres apropriados).
  *
- * `videos`, `comments` e `transcript_segments` ganham uma coluna
- * `fts tsvector` (slice #46 vai popular essa coluna em transação com o
- * INSERT). A coluna já existe aqui para evitar migração posterior; o
- * slice #43 só grava a coluna em NULL — sem `fts`, as buscas do slice
- * #45 não retornam nada até #46 popular.
+ * `videos`, `comments` e `transcript_segments` carregam uma coluna
+ * `fts tsvector` populada por `GENERATED ALWAYS AS STORED` — o Postgres
+ * avalia a expressão `to_tsvector('english', ...)` no momento do
+ * INSERT/UPDATE e armazena o resultado na própria linha, na mesma
+ * transação. A Busca (slice #45) consulta essa coluna com `tsvector @@
+ * tsquery` ranqueada por `ts_rank`, e a coluna `pg_trgm` (GIST/GIN
+ * sobre trigramas) cobre o fallback de typos quando `tsquery` retorna
+ * zero.
  *
  * Cada comando é separado por `;` e enviado individualmente para
  * garantir que o Postgres interprete cada `CREATE TABLE IF NOT EXISTS`
@@ -33,6 +36,8 @@ export class NotImplementedError extends Error {
  * exigiria um client conectado em transação explícita).
  */
 export const POSTGRES_SCHEMA = `
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
 CREATE TABLE IF NOT EXISTS channels (
   id TEXT PRIMARY KEY,
   handle TEXT NOT NULL,
@@ -60,8 +65,16 @@ CREATE TABLE IF NOT EXISTS videos (
   views BIGINT,
   likes BIGINT,
   duration_seconds INTEGER,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  fts tsvector GENERATED ALWAYS AS (
+    setweight(to_tsvector('english', coalesce(title, '')), 'A') ||
+    setweight(to_tsvector('english', coalesce(description, '')), 'B')
+  ) STORED
 );
+
+CREATE INDEX IF NOT EXISTS videos_fts_idx ON videos USING GIN (fts);
+CREATE INDEX IF NOT EXISTS videos_title_trgm_idx ON videos USING GIN (title gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS videos_description_trgm_idx ON videos USING GIN (description gin_trgm_ops);
 
 CREATE TABLE IF NOT EXISTS comments (
   id TEXT PRIMARY KEY,
@@ -70,19 +83,32 @@ CREATE TABLE IF NOT EXISTS comments (
   text TEXT NOT NULL,
   likes INTEGER NOT NULL DEFAULT 0,
   published_at TEXT,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  fts tsvector GENERATED ALWAYS AS (
+    setweight(to_tsvector('english', coalesce(text, '')), 'A') ||
+    setweight(to_tsvector('english', coalesce(author, '')), 'B')
+  ) STORED
 );
+
+CREATE INDEX IF NOT EXISTS comments_fts_idx ON comments USING GIN (fts);
+CREATE INDEX IF NOT EXISTS comments_text_trgm_idx ON comments USING GIN (text gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS comments_author_trgm_idx ON comments USING GIN (author gin_trgm_ops);
 
 CREATE TABLE IF NOT EXISTS transcript_segments (
   id BIGSERIAL PRIMARY KEY,
   video_id TEXT NOT NULL REFERENCES videos(id) ON DELETE CASCADE,
   start_seconds DOUBLE PRECISION NOT NULL,
   end_seconds DOUBLE PRECISION NOT NULL,
-  text TEXT NOT NULL
+  text TEXT NOT NULL,
+  fts tsvector GENERATED ALWAYS AS (
+    to_tsvector('english', coalesce(text, ''))
+  ) STORED
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS transcript_segments_video_start
   ON transcript_segments(video_id, start_seconds);
+CREATE INDEX IF NOT EXISTS transcript_segments_fts_idx ON transcript_segments USING GIN (fts);
+CREATE INDEX IF NOT EXISTS transcript_segments_text_trgm_idx ON transcript_segments USING GIN (text gin_trgm_ops);
 
 CREATE TABLE IF NOT EXISTS transcript_absences (
   video_id TEXT PRIMARY KEY REFERENCES videos(id) ON DELETE CASCADE,
