@@ -1,22 +1,17 @@
 import type { Ingestion, IngestionQueue } from "@youtube-index/domain";
+export type { JobRunnerDeps } from "@youtube-index/domain";
 
-export interface WorkerDeps {
+/**
+ * @deprecated Use `runNextJob` de `@youtube-index/domain` (slice #47).
+ * Mantida apenas como alias para preservar imports externos durante a
+ * transição.
+ */
+export async function pollOnce(deps: {
   queue: IngestionQueue;
   ingestion: Ingestion;
+}): Promise<boolean> {
+  const { runNextJob } = await import("@youtube-index/domain");
+  return runNextJob(deps);
 }
 
-export async function pollOnce(deps: WorkerDeps): Promise<boolean> {
-  const job = await deps.queue.claimNext();
-  if (!job) {
-    return false;
-  }
-  try {
-    await deps.ingestion.runJob(job.channelId);
-    await deps.queue.complete(job.id);
-  } catch (err) {
-    await deps.queue.fail(job.id);
-    const message = err instanceof Error ? err.message : String(err);
-    throw new Error(`job ${job.id} do canal ${job.channelId} falhou: ${message}`, { cause: err });
-  }
-  return true;
-}
+export { runNextJob } from "@youtube-index/domain";

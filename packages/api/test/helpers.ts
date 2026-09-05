@@ -7,10 +7,9 @@ export function makeConfig(overrides: Partial<AppConfig> = {}): AppConfig {
   return {
     host: "127.0.0.1",
     port: 3000,
-    meiliUrl: "http://localhost:7700",
-    meiliMasterKey: "test-master-key",
+    databaseUrl: "",
+    pollIntervalMs: 1000,
     webDistDir: null,
-    dbPath: ":memory:",
     youtubeApiKey: "test-key",
     logger: false,
     ...overrides,

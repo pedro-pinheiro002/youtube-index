@@ -1,22 +1,22 @@
 export interface AppConfig {
   host: string;
   port: number;
-  meiliUrl: string;
-  meiliMasterKey: string;
+  databaseUrl: string;
+  pollIntervalMs: number;
   webDistDir: string | null;
-  dbPath: string;
   youtubeApiKey: string;
   logger: boolean;
 }
+
+const DEFAULT_POLL_INTERVAL_MS = 1000;
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   return {
     host: env.HOST ?? "0.0.0.0",
     port: Number(env.PORT ?? 3000),
-    meiliUrl: env.MEILI_URL ?? "http://localhost:7700",
-    meiliMasterKey: env.MEILI_MASTER_KEY ?? "",
+    databaseUrl: env.DATABASE_URL ?? "",
+    pollIntervalMs: Number(env.POLL_INTERVAL_MS ?? DEFAULT_POLL_INTERVAL_MS),
     webDistDir: env.WEB_DIST_DIR ?? null,
-    dbPath: env.DB_PATH ?? "data/youtube-index.db",
     youtubeApiKey: env.YOUTUBE_API_KEY ?? "",
     logger: env.NODE_ENV !== "test",
   };

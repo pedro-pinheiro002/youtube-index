@@ -13,7 +13,6 @@ import {
   type IngestionQueue,
   type Ledger,
   type Pool,
-  type Projection,
   type TranscriptFetcher,
   type YouTubeClient,
 } from "@youtube-index/domain";
@@ -65,11 +64,6 @@ function makeYouTube(channelId: string): YouTubeClient {
 }
 
 const transcripts: TranscriptFetcher = { fetchTranscript: async () => ({ kind: "absent" }) };
-const projection: Projection = {
-  addDocuments: async () => undefined,
-  remove: async () => undefined,
-  clear: async () => undefined,
-};
 
 const sqliteBackend: WorkerBackend = {
   name: "Sqlite",
@@ -134,7 +128,6 @@ describe.each(backends)("pollOnce com $name", ({ setup }) => {
       youtube: makeYouTube(channelId),
       transcripts,
       ledger,
-      projection,
     });
 
     const processed = await pollOnce({ queue, ingestion });
@@ -174,7 +167,6 @@ describe.each(backends)("pollOnce com $name", ({ setup }) => {
       youtube: makeYouTube(channelId),
       transcripts,
       ledger,
-      projection,
     });
 
     const processed = await pollOnce({ queue, ingestion });

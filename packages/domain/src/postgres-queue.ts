@@ -43,6 +43,15 @@ export class PostgresIngestionQueue implements IngestionQueue {
        RETURNING id, channel_id, status, created_at`,
       [channelId, createdAt],
     );
+    // Acorda o loop em-processo do api (#47): o subscriber de
+    // `LISTEN ingestion_jobs` recebe o payload e dispara `runNextJob`
+    // imediatamente, sem esperar pelo próximo tick do `setInterval`.
+    // `NOTIFY` não aceita placeholders ($1) — o payload precisa ser
+    // uma literal SQL; escapamos aspas duplas para evitar SQL injection
+    // caso channelId contenha caracteres especiais.
+    const jobId = String(res.rows[0]?.id ?? "");
+    const channelIdEscaped = channelId.replace(/"/g, '\\"');
+    await this.pool.query(`NOTIFY ingestion_jobs, '${jobId}:${channelIdEscaped}'`);
     // `INSERT … RETURNING` sempre devolve uma linha quando o INSERT
     // sucede (a falha joga uma exceção diferente); sem o guard, este
     // método fica simétrico com a implementação SQLite.

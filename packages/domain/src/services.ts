@@ -26,8 +26,17 @@ export class MissingConfigError extends Error {
 
 export interface ServicesConfig {
   youtubeApiKey: string;
-  meilisearchUrl: string;
-  meilisearchMasterKey: string;
+  /**
+   * @deprecated Removido em slice #48 (Collapse legacy). Mantido
+   * opcional apenas para que o caminho SQLite+Meilisearch continue
+   * funcionando durante a transição (slice #45/#47); o caminho
+   * Postgres ignora esses campos.
+   */
+  meilisearchUrl?: string;
+  /**
+   * @deprecated Veja `meilisearchUrl`.
+   */
+  meilisearchMasterKey?: string;
   recentWindowDays?: number;
 }
 
@@ -94,8 +103,8 @@ export async function createServices(params: CreateServicesParams): Promise<Serv
   // #48 (Collapse legacy).
   const postgresSearch = isPgPool(db) ? new PostgresSearchProjection(db) : null;
   const projection: Projection & SearchPort = postgresSearch ?? (await createMeilisearchProjection({
-    url: config.meilisearchUrl,
-    masterKey: config.meilisearchMasterKey,
+    url: config.meilisearchUrl ?? "",
+    masterKey: config.meilisearchMasterKey ?? "",
     fetchImpl,
   }));
 

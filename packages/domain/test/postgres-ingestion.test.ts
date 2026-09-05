@@ -9,7 +9,6 @@ import {
   type Ingestion,
   type Ledger,
   type Pool,
-  type Projection,
   type Transcript,
   type TranscriptFetcher,
   type TranscriptResult,
@@ -126,14 +125,6 @@ function makeTranscripts(ids: TestIds): TranscriptFetcher {
   };
 }
 
-function makeProjection(): Projection {
-  return {
-    addDocuments: async () => undefined,
-    remove: async () => undefined,
-    clear: async () => undefined,
-  };
-}
-
 describe("POSTGRES ingestion pipeline (slice #43)", () => {
   let pool: Pool;
   const createdChannelIds: string[] = [];
@@ -157,7 +148,6 @@ describe("POSTGRES ingestion pipeline (slice #43)", () => {
       youtube: makeYouTube(ids),
       transcripts: makeTranscripts(ids),
       ledger,
-      projection: makeProjection(),
     });
     createdChannelIds.push(ids.channelId);
 
@@ -235,7 +225,6 @@ describe("POSTGRES ingestion pipeline (slice #43)", () => {
       youtube: makeYouTube(ids),
       transcripts: makeTranscripts(ids),
       ledger,
-      projection: makeProjection(),
     });
     createdChannelIds.push(ids.channelId);
 
