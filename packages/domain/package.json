@@ -9,6 +9,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./phases": {
+      "types": "./dist/phases.d.ts",
+      "default": "./dist/phases.js"
     }
   },
   "engines": {

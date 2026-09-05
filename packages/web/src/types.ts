@@ -39,7 +39,7 @@ export type {
   SearchSort,
 } from "@youtube-index/domain";
 
-export { PHASES, formatProgress } from "@youtube-index/domain";
+export { PHASES, formatProgress } from "@youtube-index/domain/phases";
 export type { PhaseMeta } from "@youtube-index/domain";
 
 export type TipoFilter = "all" | SearchDocumentType;
