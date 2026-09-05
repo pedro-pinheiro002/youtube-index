@@ -131,9 +131,28 @@ CREATE TABLE IF NOT EXISTS ingestion_jobs (
 
 /**
  * Cria as tabelas do PostgresLedger idempotentemente.
+ *
+ * Adquire um advisory lock em uma única transação dedicada antes de
+ * aplicar o schema — vitest roda arquivos de teste em paralelo por
+ * padrão, e dois `applyPgSchema` simultâneos disputam
+ * `pg_class_relname_nsp_index` ao criar o mesmo índice
+ * (`videos_fts_idx`, `comments_fts_idx`, etc.) mesmo com `IF NOT
+ * EXISTS`. O lock serializa o bootstrap sem precisar de uma transação
+ * explícita no caller.
  */
 export async function applyPgSchema(pool: pg.Pool): Promise<void> {
-  for (const statement of POSTGRES_SCHEMA.split(/;\s*\n/).map((s) => s.trim()).filter((s) => s.length > 0)) {
-    await pool.query(statement);
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query("SELECT pg_advisory_xact_lock(73650042)");
+    for (const statement of POSTGRES_SCHEMA.split(/;\s*\n/).map((s) => s.trim()).filter((s) => s.length > 0)) {
+      await client.query(statement);
+    }
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw err;
+  } finally {
+    client.release();
   }
 }

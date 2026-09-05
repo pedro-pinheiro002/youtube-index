@@ -1,11 +1,3 @@
-import {
-  type CommentSearchDocument,
-  type Projection,
-  type SegmentSearchDocument,
-  toCommentDocument,
-  toSegmentDocument,
-  toVideoDocument,
-} from "./documento.js";
 import type { CommentRecord, Ledger, TranscriptSegmentRecord, VideoRecord } from "./ledger.js";
 import type { TranscriptFetcher } from "./transcripts.js";
 import type { PhaseKey, PhaseStatus } from "./types.js";
@@ -28,7 +20,6 @@ export interface IngestionDeps {
   youtube: YouTubeClient;
   transcripts: TranscriptFetcher;
   ledger: Ledger;
-  projection: Projection;
   recentWindowDays?: number;
   logger?: IngestionLogger;
 }
@@ -89,7 +80,6 @@ export function createPhases(deps: IngestionDeps): readonly Phase[] {
     let pageToken: string | null = null;
     let done = 0;
     let added = 0;
-    const records: VideoRecord[] = [];
     do {
       const page = await deps.youtube.listUploads(uploadsPlaylistId, pageToken);
       let stop = false;
@@ -115,7 +105,6 @@ export function createPhases(deps: IngestionDeps): readonly Phase[] {
               durationSeconds: stats.durationSeconds,
             };
             await deps.ledger.upsertVideo(record);
-            records.push(record);
             added += 1;
           } else {
             log.warn(`[${channelId}] vídeo ${video.id} sem métricas (removido/indisponível); pulado`);
@@ -129,7 +118,9 @@ export function createPhases(deps: IngestionDeps): readonly Phase[] {
       pageToken = stop ? null : page.nextPageToken;
     } while (pageToken);
 
-    await deps.projection.addDocuments(channelId, records.map(toVideoDocument));
+    // No caminho Postgres os Vídeos são materializados no Ledger e a coluna
+    // `fts` é populada na MESMA transação pela `generated always as` —
+    // nada precisa ser empurrado para uma Projeção externa (slice #46).
     const videos = await deps.ledger.listVideos(channelId);
     const total = videos.length;
     await deps.ledger.updatePhase(channelId, "videos", { status: "completed", total });
@@ -147,7 +138,6 @@ export function createPhases(deps: IngestionDeps): readonly Phase[] {
 
     let done = 0;
     let added = 0;
-    const documents: CommentSearchDocument[] = [];
     for (const video of videos) {
       if (isSync) {
         if (!isRecent(video.publishedAt, recentWindowDays)) {
@@ -160,25 +150,17 @@ export function createPhases(deps: IngestionDeps): readonly Phase[] {
       }
       try {
         const comments = await deps.youtube.listComments(video.id);
-        // Na Sincronização, o conjunto de Comentários pode ter mudado de duas
-        // formas: (a) o top-50 mudou (alguns saíram, outros entraram) ou
-        // (b) o Vídeo antes tinha Comentários e agora não tem mais. Em ambos
-        // os casos varr os Documentos stale do Vídeo no Índice antes de
-        // re-projetar — sem isso, o Índice mantém Documentos de Comentários
-        // que já saíram e voltariam a aparecer em Buscas.
-        if (isSync && (comments.length === 0 || (await deps.ledger.hasCommentIngestion(video.id)))) {
-          await deps.projection.remove(channelId, (hit) => hit.type === "comment" && hit.videoId === video.id);
-        }
+        // Na Sincronização o conjunto de Comentários pode ter mudado
+        // (top-50 mudou, ou Vídeo sem Comentários agora). No caminho
+        // Postgres a remoção é implícita: `deleteCommentsForVideo` apaga
+        // as linhas e a `fts` das colunas some com elas — não há Índice
+        // externo para varrer (slice #46).
         if (comments.length === 0) {
           await deps.ledger.deleteCommentsForVideo(video.id);
           await deps.ledger.markCommentAbsence(video.id, "none");
         } else {
           await deps.ledger.deleteCommentsForVideo(video.id);
           await deps.ledger.clearCommentAbsence(video.id);
-          const context = await deps.ledger.videoContext(video.id);
-          if (!context) {
-            throw new Error(`vídeo ${video.id} sem contexto no Ledger`);
-          }
           for (const comment of comments) {
             const record: CommentRecord = {
               id: comment.id,
@@ -190,7 +172,6 @@ export function createPhases(deps: IngestionDeps): readonly Phase[] {
               publishedAt: comment.publishedAt,
             };
             await deps.ledger.upsertComment(record);
-            documents.push(toCommentDocument(record, context));
             added += 1;
           }
         }
@@ -205,7 +186,9 @@ export function createPhases(deps: IngestionDeps): readonly Phase[] {
       log.event("video:processed", { phase: "comments", channelId, videoId: video.id });
     }
 
-    await deps.projection.addDocuments(channelId, documents);
+    // Os Comentários ficam disponíveis para a Busca imediatamente
+    // após `upsertComment` porque o Ledger grava a coluna `fts`
+    // (gerada) na MESMA transação — slice #46.
     await deps.ledger.updatePhase(channelId, "comments", { status: "completed", total: videos.length });
     log.event("phase:completed", { phase: "comments", channelId, total: videos.length });
     log.info(`[${channelId}] fase comments concluída: ${done}/${videos.length} vídeos (${added} comentários)`);
@@ -221,7 +204,6 @@ export function createPhases(deps: IngestionDeps): readonly Phase[] {
 
     let done = 0;
     let added = 0;
-    const documents: SegmentSearchDocument[] = [];
     for (const video of videos) {
       if (isSync) {
         // Na Sincronização, só re-processamos Vídeos recentes para apanhar
@@ -237,13 +219,11 @@ export function createPhases(deps: IngestionDeps): readonly Phase[] {
         continue;
       }
       const result = await deps.transcripts.fetchTranscript(video.id);
-      // Em Sincronização, Segmentos antigos do Vídeo podem ter ficado stale
-      // no Índice — a Transcrição pode ter sido corrigida (segmentos
-      // diferentes) ou removida. Varre antes de qualquer mudança para não
-      // misturar Segmentos novos com antigos em Buscas.
-      if (isSync && (await deps.ledger.hasTranscriptIngestion(video.id))) {
-        await deps.projection.remove(channelId, (hit) => hit.type === "segment" && hit.videoId === video.id);
-      }
+      // `deleteTranscriptSegmentsForVideo` abaixo já cobre o caso de
+      // Sincronização onde a Transcrição mudou: a remoção dos Segmentos
+      // antigos + o upsert dos novos acontece em uma única janela de
+      // execução do Ledger (slice #46 — sem Projeção externa para
+      // varrer).
       await deps.ledger.deleteTranscriptSegmentsForVideo(video.id);
       // O contrato discriminado substitui o antigo `Transcript | null`. Os
       // três outcomes são tratados exaustivamente: `transcript` upserta os
@@ -251,10 +231,6 @@ export function createPhases(deps: IngestionDeps): readonly Phase[] {
       // Fase falhar e o Vídeo permanece retriable (sem ausência durável).
       switch (result.kind) {
         case "transcript": {
-          const context = await deps.ledger.videoContext(video.id);
-          if (!context) {
-            throw new Error(`vídeo ${video.id} sem contexto no Ledger`);
-          }
           for (const segment of result.transcript.segments) {
             const record: TranscriptSegmentRecord = {
               id: `${video.id}:${segment.start}`,
@@ -265,7 +241,6 @@ export function createPhases(deps: IngestionDeps): readonly Phase[] {
               text: segment.text,
             };
             await deps.ledger.upsertTranscriptSegment(record);
-            documents.push(toSegmentDocument(record, context));
             added += 1;
           }
           break;
@@ -286,7 +261,9 @@ export function createPhases(deps: IngestionDeps): readonly Phase[] {
       log.event("video:processed", { phase: "transcripts", channelId, videoId: video.id });
     }
 
-    await deps.projection.addDocuments(channelId, documents);
+    // Os Segmentos ficam disponíveis para a Busca imediatamente após
+    // `upsertTranscriptSegment` porque o Ledger grava a coluna `fts`
+    // (gerada) na MESMA transação — slice #46.
     await deps.ledger.updatePhase(channelId, "transcripts", { status: "completed", total: videos.length });
     log.event("phase:completed", { phase: "transcripts", channelId, total: videos.length });
     log.info(`[${channelId}] fase transcripts concluída: ${done}/${videos.length} vídeos (${added} segmentos)`);

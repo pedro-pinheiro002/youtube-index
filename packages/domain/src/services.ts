@@ -103,7 +103,6 @@ export async function createServices(params: CreateServicesParams): Promise<Serv
     youtube,
     transcripts,
     ledger,
-    projection,
     logger,
     recentWindowDays: config.recentWindowDays,
   });

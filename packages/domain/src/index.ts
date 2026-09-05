@@ -51,13 +51,7 @@ export {
   STOP_WORDS_PT,
 } from "./documento.js";
 export type { SearchHit, SearchParams, SearchPort, SearchResponse, SearchSort } from "./search.js";
-export type { RebuildAllDeps, RebuildCommentsDeps, RebuildDeps, RebuildTranscriptsDeps } from "./rebuild.js";
-export {
-  rebuildAllProjections,
-  rebuildCommentsProjection,
-  rebuildTranscriptsProjection,
-  rebuildVideosProjection,
-} from "./rebuild.js";
+export { rebuildFts, rebuildFtsInPool } from "./rebuild-fts.js";
 export type { MeilisearchConfig } from "./meilisearch.js";
 export { createMeilisearchProjection, MeilisearchError, MeilisearchProjection } from "./meilisearch.js";
 export type { CreateServicesParams, Services, ServicesConfig } from "./services.js";

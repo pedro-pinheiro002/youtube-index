@@ -4,12 +4,9 @@ import { SqliteLedger } from "../src/ledger.js";
 import { createIngestion } from "../src/ingestion.js";
 import { CommentsDisabledError, YouTubeApiError } from "../src/youtube.js";
 import type {
-  Documento,
   IngestionLogger,
   Ledger,
   Phase,
-  Projection,
-  ProjectionHit,
   Transcript,
   TranscriptFetcher,
   TranscriptResult,
@@ -74,31 +71,6 @@ function makeRecordingTranscriptFetcher(transcripts: Record<string, Transcript |
   };
 }
 
-function makeProjection(): Projection {
-  return { addDocuments: async () => {}, remove: async () => {}, clear: async () => {} };
-}
-
-function makeRecordingProjection() {
-  const calls: Array<{ channelId: string; documents: Documento[] }> = [];
-  const removeCalls: Array<{ channelId: string; predicate: (hit: ProjectionHit) => boolean }> = [];
-  const clearCalls: string[] = [];
-  const projection = {
-    addDocuments: async (channelId: string, documents: Documento[]) => {
-      calls.push({ channelId, documents });
-    },
-    remove: async (channelId: string, predicate: (hit: ProjectionHit) => boolean) => {
-      removeCalls.push({ channelId, predicate });
-    },
-    clear: async (channelId: string) => {
-      clearCalls.push(channelId);
-    },
-    calls,
-    removeCalls,
-    clearCalls,
-  };
-  return projection;
-}
-
 function makeRecordingLogger() {
   const events: Array<{ event: string; data: Record<string, unknown> }> = [];
   const errorCalls: Array<{ message: string; cause?: Error }> = [];
@@ -154,7 +126,6 @@ function makeIngestion(youtube: YouTubeClient, ledger: Ledger) {
     youtube,
     transcripts: makeTranscriptFetcher(),
     ledger,
-    projection: makeProjection(),
   });
 }
 
@@ -183,7 +154,6 @@ describe("createIngestion", () => {
         ),
         transcripts: makeTranscriptFetcher(),
         ledger,
-        projection: makeProjection(),
         logger,
       });
 
@@ -288,7 +258,6 @@ describe("createIngestion", () => {
         ),
         transcripts: makeTranscriptFetcher(),
         ledger,
-        projection: makeProjection(),
         logger,
       });
 
@@ -308,43 +277,7 @@ describe("createIngestion", () => {
       });
     });
 
-    it("grava Documentos de Vídeo na Projeção com contexto denormalizado (URL e thumbnail)", async () => {
-      const ledger = makeLedger();
-      await ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
-      const projection = makeRecordingProjection();
-      const ingestion = createIngestion({
-        youtube: makeYouTubeClient(
-          [{ videos: [video("v1", "Primeiro vídeo", "2023-01-01T00:00:00Z")], nextPageToken: null }],
-          { v1: { views: 1234, likes: 56, durationSeconds: 542 } },
-        ),
-        transcripts: makeTranscriptFetcher(),
-        ledger,
-        projection,
-      });
-
-      await ingestion._runPhase("videos", CHANNEL_ID);
-
-      expect(projection.calls).toEqual([
-        {
-          channelId: CHANNEL_ID,
-          documents: [
-            expect.objectContaining({
-              id: "v1",
-              channelId: CHANNEL_ID,
-              type: "video",
-              title: "Primeiro vídeo",
-              description: "descrição de v1",
-              views: 1234,
-              likes: 56,
-              durationSeconds: 542,
-              url: "https://www.youtube.com/watch?v=v1",
-              thumbnail: "https://i.ytimg.com/vi/v1/hqdefault.jpg",
-              publishedAt: "2023-01-01T00:00:00Z",
-            }),
-          ],
-        },
-      ]);
-    });
+    
   });
 
   describe("Fase de Comentários (via _runPhase seam)", () => {
@@ -376,7 +309,7 @@ describe("createIngestion", () => {
         v1: [{ id: "c1", author: "Gato Funky", text: "Primeiro comentário", likes: 42, publishedAt: "2023-01-02T00:00:00Z" }],
         v2: [{ id: "c2", author: "Cão Legal", text: "Segundo comentário", likes: 7, publishedAt: "2023-01-03T00:00:00Z" }],
       });
-      const ingestionComments = createIngestion({ youtube, transcripts: makeTranscriptFetcher(), ledger, projection: makeProjection() });
+      const ingestionComments = createIngestion({ youtube, transcripts: makeTranscriptFetcher(), ledger });
 
       await ingestionComments._runPhase("comments", CHANNEL_ID);
 
@@ -406,47 +339,16 @@ describe("createIngestion", () => {
       });
     });
 
-    it("projeta Documentos de Comentário com contexto denormalizado do Vídeo", async () => {
-      const { ledger, ingestion } = await makeChannelWithVideos();
-      await ingestion._runPhase("videos", CHANNEL_ID);
-      const projection = makeRecordingProjection();
-      const youtube = makeYouTubeClient([], {}, {
-        v1: [{ id: "c1", author: "Gato Funky", text: "Primeiro comentário", likes: 42, publishedAt: "2023-01-02T00:00:00Z" }],
-      });
-      const ingestionComments = createIngestion({ youtube, transcripts: makeTranscriptFetcher(), ledger, projection });
-
-      await ingestionComments._runPhase("comments", CHANNEL_ID);
-
-      expect(projection.calls).toEqual([
-        {
-          channelId: CHANNEL_ID,
-          documents: [
-            expect.objectContaining({
-              id: "c1",
-              channelId: CHANNEL_ID,
-              type: "comment",
-              videoId: "v1",
-              videoTitle: "Primeiro vídeo",
-              videoUrl: "https://www.youtube.com/watch?v=v1",
-              videoThumbnail: "https://i.ytimg.com/vi/v1/hqdefault.jpg",
-              author: "Gato Funky",
-              text: "Primeiro comentário",
-              likes: 42,
-            }),
-          ],
-        },
-      ]);
-    });
+    
 
     it("pula Vídeos com Comentários desativados sem derrubar a Fase", async () => {
       const { ledger, ingestion } = await makeChannelWithVideos();
       await ingestion._runPhase("videos", CHANNEL_ID);
-      const projection = makeRecordingProjection();
       const youtube = makeYouTubeClient([], {}, {
         v1: new CommentsDisabledError("v1"),
         v2: [{ id: "c2", author: "Cão Legal", text: "Segundo comentário", likes: 7, publishedAt: "2023-01-03T00:00:00Z" }],
       });
-      const ingestionComments = createIngestion({ youtube, transcripts: makeTranscriptFetcher(), ledger, projection });
+      const ingestionComments = createIngestion({ youtube, transcripts: makeTranscriptFetcher(), ledger });
 
       await ingestionComments._runPhase("comments", CHANNEL_ID);
 
@@ -463,12 +365,10 @@ describe("createIngestion", () => {
     it("conclui a Fase quando nenhum Vídeo tem Comentários", async () => {
       const { ledger, ingestion } = await makeChannelWithVideos();
       await ingestion._runPhase("videos", CHANNEL_ID);
-      const projection = makeRecordingProjection();
       const ingestionComments = createIngestion({
         youtube: makeYouTubeClient([], {}),
         transcripts: makeTranscriptFetcher(),
         ledger,
-        projection,
       });
 
       await ingestionComments._runPhase("comments", CHANNEL_ID);
@@ -521,7 +421,6 @@ describe("createIngestion", () => {
         youtube: makeYouTubeClient([], {}),
         transcripts: fetcher,
         ledger,
-        projection: makeProjection(),
       });
 
       await ingestionTranscripts._runPhase("transcripts", CHANNEL_ID);
@@ -552,44 +451,7 @@ describe("createIngestion", () => {
       });
     });
 
-    it("projeta Documentos de Segmento com deep-link ao momento exato", async () => {
-      const { ledger, ingestion } = await makeChannelWithVideos();
-      await ingestion._runPhase("videos", CHANNEL_ID);
-      const projection = makeRecordingProjection();
-      const fetcher = makeTranscriptFetcherWith({
-        v1: { videoId: "v1", segments: [{ start: 142, duration: 8, text: "trecho com deep-link" }] },
-      });
-      const ingestionTranscripts = createIngestion({
-        youtube: makeYouTubeClient([], {}),
-        transcripts: fetcher,
-        ledger,
-        projection,
-      });
-
-      await ingestionTranscripts._runPhase("transcripts", CHANNEL_ID);
-
-      expect(projection.calls).toEqual([
-        {
-          channelId: CHANNEL_ID,
-          documents: [
-            expect.objectContaining({
-              id: "v1:142",
-              channelId: CHANNEL_ID,
-              type: "segment",
-              videoId: "v1",
-              videoTitle: "Primeiro vídeo",
-              videoUrl: "https://www.youtube.com/watch?v=v1",
-              videoThumbnail: "https://i.ytimg.com/vi/v1/hqdefault.jpg",
-              text: "trecho com deep-link",
-              start: 142,
-              end: 150,
-              url: "https://www.youtube.com/watch?v=v1&t=142s",
-              publishedAt: "2023-01-01T00:00:00Z",
-            }),
-          ],
-        },
-      ]);
-    });
+    
 
     it('variant "absent": marca o Vídeo como ausente no Ledger (markTranscriptAbsent) e não derruba a Fase', async () => {
       const { ledger, ingestion } = await makeChannelWithVideos();
@@ -611,7 +473,6 @@ describe("createIngestion", () => {
         youtube: makeYouTubeClient([], {}),
         transcripts: fetcher,
         ledger,
-        projection: makeProjection(),
       });
 
       await ingestionTranscripts._runPhase("transcripts", CHANNEL_ID);
@@ -646,7 +507,6 @@ describe("createIngestion", () => {
         youtube: makeYouTubeClient([], {}),
         transcripts: fetcher,
         ledger,
-        projection: makeProjection(),
       });
 
       // error → throw. (O cause flui para o logger via runJob's catch —
@@ -681,7 +541,6 @@ describe("createIngestion", () => {
         youtube: makeYouTubeClient([], {}),
         transcripts: okFetcher,
         ledger,
-        projection: makeProjection(),
       });
 
       await okIngestion._runPhase("transcripts", CHANNEL_ID);
@@ -724,7 +583,6 @@ describe("createIngestion", () => {
         youtube: makeYouTubeClient([{ videos: [], nextPageToken: null }], {}),
         transcripts: fetcher,
         ledger,
-        projection: makeProjection(),
         logger,
       });
 
@@ -747,7 +605,6 @@ describe("createIngestion", () => {
         youtube: makeYouTubeClient([], {}),
         transcripts: makeTranscriptFetcher(),
         ledger,
-        projection: makeProjection(),
       });
 
       await ingestionTranscripts._runPhase("transcripts", CHANNEL_ID);
@@ -779,65 +636,6 @@ describe("createIngestion", () => {
       const channel = await ledger.getChannel(CHANNEL_ID);
       expect(channel?.status).toBe("completed");
       expect(channel?.phases.videos).toMatchObject({ status: "completed", done: 1, total: 1 });
-    });
-
-    it("marca o Canal como completed ao final e roda também a Fase de Comentários", async () => {
-      const ledger = makeLedger();
-      await ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
-      const projection = makeRecordingProjection();
-      const ingestion = createIngestion({
-        youtube: makeYouTubeClient(
-          [{ videos: [video("v1", "Um vídeo", "2023-01-01T00:00:00Z")], nextPageToken: null }],
-          { v1: { views: 1, likes: 0, durationSeconds: 10 } },
-          { v1: [{ id: "c1", author: "Gato Funky", text: "Primeiro comentário", likes: 5, publishedAt: "2023-01-02T00:00:00Z" }] },
-        ),
-        transcripts: makeTranscriptFetcher(),
-        ledger,
-        projection,
-      });
-
-      await ingestion.runJob(CHANNEL_ID);
-
-      const channel = await ledger.getChannel(CHANNEL_ID);
-      expect(channel?.status).toBe("completed");
-      expect(channel?.phases.videos).toMatchObject({ status: "completed", done: 1, total: 1 });
-      expect(channel?.phases.comments).toMatchObject({ status: "completed", done: 1, total: 1 });
-      expect(channel?.phases.transcripts).toMatchObject({ status: "completed", done: 1, total: 1 });
-      expect(await ledger.listComments(CHANNEL_ID)).toHaveLength(1);
-      expect(projection.calls.flatMap((c) => c.documents.map((d) => d.type))).toEqual(["video", "comment"]);
-    });
-
-    it("roda as três Fases e projeta Segmentos com deep-link", async () => {
-      const ledger = makeLedger();
-      await ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
-      const projection = makeRecordingProjection();
-      const ingestion = createIngestion({
-        youtube: makeYouTubeClient(
-          [{ videos: [video("v1", "Um vídeo", "2023-01-01T00:00:00Z")], nextPageToken: null }],
-          { v1: { views: 1, likes: 0, durationSeconds: 10 } },
-        ),
-        transcripts: makeTranscriptFetcherWith({
-          v1: { videoId: "v1", segments: [{ start: 142, duration: 8, text: "trecho com deep-link" }] },
-        }),
-        ledger,
-        projection,
-      });
-
-      await ingestion.runJob(CHANNEL_ID);
-
-      const channel = await ledger.getChannel(CHANNEL_ID);
-      expect(channel?.status).toBe("completed");
-      expect(channel?.phases.videos).toMatchObject({ status: "completed" });
-      expect(channel?.phases.comments).toMatchObject({ status: "completed" });
-      expect(channel?.phases.transcripts).toMatchObject({ status: "completed", done: 1, total: 1 });
-      const segmentDocs = projection.calls.flatMap((c) => c.documents).filter((d) => d.type === "segment");
-      expect(segmentDocs).toEqual([
-        expect.objectContaining({
-          id: "v1:142",
-          type: "segment",
-          url: "https://www.youtube.com/watch?v=v1&t=142s",
-        }),
-      ]);
     });
 
     it("marca o Canal como failed quando a Fase de Vídeos falha", async () => {
@@ -896,7 +694,6 @@ describe("createIngestion", () => {
         ),
         transcripts: makeTranscriptFetcher(),
         ledger,
-        projection: makeProjection(),
         logger,
       });
 
@@ -1063,7 +860,6 @@ describe("createIngestion", () => {
           ),
           transcripts: makeTranscriptFetcher(),
           ledger,
-          projection: makeProjection(),
         });
 
         await ingestion._runPhase("comments", CHANNEL_ID);
@@ -1132,7 +928,6 @@ describe("createIngestion", () => {
           ),
           transcripts: makeTranscriptFetcher(),
           ledger,
-          projection: makeProjection(),
         });
 
         await ingestion._runPhase("comments", CHANNEL_ID);
@@ -1168,7 +963,6 @@ describe("createIngestion", () => {
           youtube: makeYouTubeClient([], {}, {}, { commentsCalls }),
           transcripts: makeTranscriptFetcher(),
           ledger,
-          projection: makeProjection(),
           recentWindowDays: 5,
         });
 
@@ -1202,7 +996,6 @@ describe("createIngestion", () => {
           }),
           transcripts: makeTranscriptFetcher(),
           ledger,
-          projection: makeProjection(),
         });
 
         await ingestion._runPhase("comments", CHANNEL_ID);
@@ -1250,7 +1043,6 @@ describe("createIngestion", () => {
           youtube: makeYouTubeClient([], {}),
           transcripts: recording.fetcher,
           ledger,
-          projection: makeProjection(),
         });
 
         await ingestion._runPhase("transcripts", CHANNEL_ID);
@@ -1315,7 +1107,6 @@ describe("createIngestion", () => {
           ),
           transcripts: makeTranscriptFetcher(),
           ledger,
-          projection: makeProjection(),
           logger,
         });
 
@@ -1377,7 +1168,6 @@ describe("createIngestion", () => {
           ),
           transcripts: makeTranscriptFetcher(),
           ledger,
-          projection: makeProjection(),
           logger,
         });
 
@@ -1427,7 +1217,6 @@ describe("createIngestion", () => {
           youtube: makeYouTubeClient([{ videos, nextPageToken: null }], stats, comments),
           transcripts: makeTranscriptFetcher(),
           ledger,
-          projection: makeProjection(),
           logger: firstLogger,
         });
 
@@ -1447,7 +1236,6 @@ describe("createIngestion", () => {
           youtube: makeYouTubeClient([{ videos, nextPageToken: null }], stats, comments),
           transcripts: makeTranscriptFetcher(),
           ledger,
-          projection: makeProjection(),
           logger: secondLogger,
         });
 
@@ -1477,276 +1265,6 @@ describe("createIngestion", () => {
       });
     });
 
-    describe("ghost sweep", () => {
-      it("no Comentário phase sync mode, chama projection.remove para varrer Documentos stale do Vídeo antes de re-projetar", async () => {
-        const ledger = makeLedger();
-        await makeChannel(ledger);
-        await ledger.upsertVideo({
-          id: "v1",
-          channelId: CHANNEL_ID,
-          title: "Recente",
-          description: "desc",
-          publishedAt: daysAgo(10),
-          views: 1,
-          likes: 0,
-          durationSeconds: 10,
-        });
-        await ledger.upsertVideo({
-          id: "v2",
-          channelId: CHANNEL_ID,
-          title: "Antigo",
-          description: "desc",
-          publishedAt: daysAgo(365),
-          views: 2,
-          likes: 0,
-          durationSeconds: 20,
-        });
-        // c1 fica no Ledger da ingestão anterior; o Documento correspondente está no Índice
-        await ledger.upsertComment({
-          id: "c1",
-          videoId: "v1",
-          channelId: CHANNEL_ID,
-          author: "Antigo Autor",
-          text: "Comentário antigo de v1",
-          likes: 1,
-          publishedAt: daysAgo(5),
-        });
-        await ledger.upsertComment({
-          id: "c2",
-          videoId: "v2",
-          channelId: CHANNEL_ID,
-          author: "Autor",
-          text: "Comentário de v2",
-          likes: 2,
-          publishedAt: daysAgo(300),
-        });
-        await ledger.updatePhase(CHANNEL_ID, "comments", { status: "completed" });
-
-        const projection = makeRecordingProjection();
-        const ingestion = createIngestion({
-          youtube: makeYouTubeClient(
-            [],
-            {},
-            {
-              v1: [
-                { id: "c1", author: "Novo Autor", text: "Comentário atualizado", likes: 10, publishedAt: daysAgo(1) },
-                { id: "c1b", author: "Outro", text: "Comentário novo", likes: 5, publishedAt: daysAgo(1) },
-              ],
-            },
-          ),
-          transcripts: makeTranscriptFetcher(),
-          ledger,
-          projection,
-        });
-
-        await ingestion._runPhase("comments", CHANNEL_ID);
-
-        // remove é chamado com o (channelId, predicate) que mira Documentos de Comentário do v1
-        expect(projection.removeCalls).toHaveLength(1);
-        expect(projection.removeCalls[0]?.channelId).toBe(CHANNEL_ID);
-        const predicate = projection.removeCalls[0]?.predicate;
-        expect(predicate).toBeDefined();
-        if (!predicate) throw new Error("predicate ausente");
-        expect(predicate({ id: "c1", type: "comment", channelId: CHANNEL_ID, videoId: "v1" })).toBe(true);
-        expect(predicate({ id: "c1b", type: "comment", channelId: CHANNEL_ID, videoId: "v1" })).toBe(true);
-        // não deve varrer Documentos de v2 ou de outros tipos
-        expect(predicate({ id: "c2", type: "comment", channelId: CHANNEL_ID, videoId: "v2" })).toBe(false);
-        expect(predicate({ id: "v1", type: "video", channelId: CHANNEL_ID })).toBe(false);
-        expect(predicate({ id: "v1:0", type: "segment", channelId: CHANNEL_ID, videoId: "v1" })).toBe(false);
-
-        // remove foi chamado antes do addDocuments dos novos Documentos
-        const removeOrder = projection.removeCalls[0];
-        const addCall = projection.calls.find((c) => c.documents.some((d) => d.type === "comment"));
-        expect(removeOrder).toBeDefined();
-        expect(addCall).toBeDefined();
-      });
-
-      it("no Comentário phase sync mode, chama projection.remove quando o Vídeo antes tinha Comentários e agora não tem mais (shift para zero)", async () => {
-        const ledger = makeLedger();
-        await makeChannel(ledger);
-        await ledger.upsertVideo({
-          id: "v1",
-          channelId: CHANNEL_ID,
-          title: "Vídeo v1",
-          description: "desc",
-          publishedAt: daysAgo(10),
-          views: 1,
-          likes: 0,
-          durationSeconds: 10,
-        });
-        // Comentários antigos do v1 ficam no Ledger da ingestão anterior; os Documentos correspondentes estão no Índice
-        await ledger.upsertComment({
-          id: "c1",
-          videoId: "v1",
-          channelId: CHANNEL_ID,
-          author: "Antigo Autor",
-          text: "Comentário antigo",
-          likes: 5,
-          publishedAt: daysAgo(20),
-        });
-        await ledger.updatePhase(CHANNEL_ID, "comments", { status: "completed" });
-
-        const projection = makeRecordingProjection();
-        const ingestion = createIngestion({
-          youtube: makeYouTubeClient([], {}, {
-            v1: [], // Sincronização encontra zero Comentários
-          }),
-          transcripts: makeTranscriptFetcher(),
-          ledger,
-          projection,
-        });
-
-        await ingestion._runPhase("comments", CHANNEL_ID);
-
-        // remove é chamado para varrer Documentos de Comentário stale do v1
-        expect(projection.removeCalls).toHaveLength(1);
-        expect(projection.removeCalls[0]?.channelId).toBe(CHANNEL_ID);
-        const predicate = projection.removeCalls[0]?.predicate;
-        expect(predicate).toBeDefined();
-        if (!predicate) throw new Error("predicate ausente");
-        expect(predicate({ id: "c1", type: "comment", channelId: CHANNEL_ID, videoId: "v1" })).toBe(true);
-        expect(predicate({ id: "v1", type: "video", channelId: CHANNEL_ID })).toBe(false);
-
-        // Ledger limpo: sem Comentários e com ausência marcada
-        expect(await ledger.listComments(CHANNEL_ID)).toEqual([]);
-        expect(await ledger.listCommentAbsences(CHANNEL_ID)).toEqual(["v1"]);
-
-        // Nenhum Documento de Comentário é re-projetado
-        const addedDocs = projection.calls.flatMap((c) => c.documents);
-        expect(addedDocs.filter((d) => d.type === "comment")).toEqual([]);
-      });
-
-      it("no Comentário phase initial mode, não chama projection.remove ao re-projetar Vídeos sem Comentário prévio", async () => {
-        const ledger = makeLedger();
-        await makeChannel(ledger);
-        await ledger.upsertVideo({
-          id: "v1",
-          channelId: CHANNEL_ID,
-          title: "Vídeo v1",
-          description: "desc",
-          publishedAt: daysAgo(10),
-          views: 1,
-          likes: 0,
-          durationSeconds: 10,
-        });
-        // phase comments = pending (ingestão inicial, ainda sem Documentos no Índice)
-
-        const projection = makeRecordingProjection();
-        const ingestion = createIngestion({
-          youtube: makeYouTubeClient(
-            [],
-            {},
-            {
-              v1: [{ id: "c1", author: "A", text: "Primeiro comentário", likes: 1, publishedAt: daysAgo(1) }],
-            },
-          ),
-          transcripts: makeTranscriptFetcher(),
-          ledger,
-          projection,
-        });
-
-        await ingestion._runPhase("comments", CHANNEL_ID);
-
-        expect(projection.removeCalls).toEqual([]);
-        expect(projection.calls).toHaveLength(1);
-      });
-
-      it("no Transcrição phase, chama projection.remove para varrer Segmentos stale do Vídeo antes de re-projetar quando a Transcrição mudou", async () => {
-        const ledger = makeLedger();
-        await makeChannel(ledger);
-        await ledger.upsertVideo({
-          id: "v1",
-          channelId: CHANNEL_ID,
-          title: "Vídeo v1",
-          description: "desc",
-          publishedAt: daysAgo(10),
-          views: 1,
-          likes: 0,
-          durationSeconds: 10,
-        });
-        // Segmentos antigos do v1 ficam no Ledger da ingestão anterior; o Documento correspondente está no Índice
-        await ledger.upsertTranscriptSegment({
-          id: "v1:0",
-          videoId: "v1",
-          channelId: CHANNEL_ID,
-          start: 0,
-          end: 10,
-          text: "trecho antigo de v1",
-        });
-        // marca a Fase como completed (modo Sincronização: vou re-processar a Transcrição)
-        await ledger.updatePhase(CHANNEL_ID, "transcripts", { status: "completed" });
-
-        const projection = makeRecordingProjection();
-        const fetcher = makeTranscriptFetcherWith({
-          v1: {
-            videoId: "v1",
-            segments: [
-              { start: 0, duration: 10, text: "trecho novo de v1" },
-              { start: 142, duration: 8, text: "trecho novo de v1 com deep-link" },
-            ],
-          },
-        });
-        const ingestion = createIngestion({
-          youtube: makeYouTubeClient([], {}),
-          transcripts: fetcher,
-          ledger,
-          projection,
-        });
-
-        await ingestion._runPhase("transcripts", CHANNEL_ID);
-
-        // remove é chamado para varrer Segmentos do v1 antes de re-projetar
-        expect(projection.removeCalls).toHaveLength(1);
-        expect(projection.removeCalls[0]?.channelId).toBe(CHANNEL_ID);
-        const predicate = projection.removeCalls[0]?.predicate;
-        expect(predicate).toBeDefined();
-        if (!predicate) throw new Error("predicate ausente");
-        expect(predicate({ id: "v1:0", type: "segment", channelId: CHANNEL_ID, videoId: "v1" })).toBe(true);
-        expect(predicate({ id: "v1:142", type: "segment", channelId: CHANNEL_ID, videoId: "v1" })).toBe(true);
-        // não deve varrer Documentos de outros tipos
-        expect(predicate({ id: "v1", type: "video", channelId: CHANNEL_ID })).toBe(false);
-        expect(predicate({ id: "c1", type: "comment", channelId: CHANNEL_ID, videoId: "v1" })).toBe(false);
-
-        // Segmentos antigos foram substituídos pelos novos no Ledger
-        const storedSegments = await ledger.listTranscriptSegments(CHANNEL_ID);
-        expect(storedSegments).toHaveLength(2);
-        expect(storedSegments.find((s) => s.start === 0)?.text).toBe("trecho novo de v1");
-        expect(storedSegments.find((s) => s.start === 142)?.text).toBe("trecho novo de v1 com deep-link");
-      });
-
-      it("no Transcrição phase, quando a Transcrição não está disponível, remove não é chamado (não há re-projeção)", async () => {
-        const ledger = makeLedger();
-        await makeChannel(ledger);
-        await ledger.upsertVideo({
-          id: "v1",
-          channelId: CHANNEL_ID,
-          title: "Vídeo v1",
-          description: "desc",
-          publishedAt: daysAgo(10),
-          views: 1,
-          likes: 0,
-          durationSeconds: 10,
-        });
-        await ledger.updatePhase(CHANNEL_ID, "transcripts", { status: "completed" });
-
-        const projection = makeRecordingProjection();
-        // fetcher devolve null para v1 (transcrição indisponível)
-        const ingestion = createIngestion({
-          youtube: makeYouTubeClient([], {}),
-          transcripts: makeTranscriptFetcher(),
-          ledger,
-          projection,
-        });
-
-        await ingestion._runPhase("transcripts", CHANNEL_ID);
-
-        // sem re-projeção, remove não é chamado e nenhum Documento é projetado
-        expect(projection.removeCalls).toEqual([]);
-        const addedDocs = projection.calls.flatMap((c) => c.documents);
-        expect(addedDocs.filter((d) => d.type === "segment")).toEqual([]);
-        expect(await ledger.listTranscriptAbsences(CHANNEL_ID)).toEqual(["v1"]);
-      });
-    });
   });
 
   describe("Ingestion loop via registry seam", () => {
@@ -1776,7 +1294,6 @@ describe("createIngestion", () => {
           youtube: makeYouTubeClient([], {}),
           transcripts: makeTranscriptFetcher(),
           ledger,
-          projection: makeProjection(),
         },
         fakePhases,
       );
@@ -1809,7 +1326,6 @@ describe("createIngestion", () => {
           youtube: makeYouTubeClient([], {}),
           transcripts: makeTranscriptFetcher(),
           ledger,
-          projection: makeProjection(),
         },
         fakePhases,
       );
