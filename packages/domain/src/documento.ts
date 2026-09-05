@@ -1,4 +1,4 @@
-import type { CommentRecord, TranscriptSegmentRecord, VideoContext, VideoRecord } from "./ledger.js";
+import type { CommentRecord, TranscriptSegmentRecord, VideoContext, VideoRecord } from "./postgres-ledger.js";
 
 /**
  * Os três tipos de Documento que vivem no Índice do Meilisearch,

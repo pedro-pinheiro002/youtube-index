@@ -1,6 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
-import { createDatabase } from "../src/schema.js";
-import { SqliteLedger } from "../src/ledger.js";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { applyPgSchema, closePgPool, createPgPool, PostgresLedger, type Pool } from "@youtube-index/domain";
 import { createIngestion } from "../src/ingestion.js";
 import { CommentsDisabledError, YouTubeApiError } from "../src/youtube.js";
 import type {
@@ -30,8 +29,8 @@ interface ClientRecorder {
   commentsCalls?: string[];
 }
 
-function makeLedger(): Ledger {
-  return new SqliteLedger(createDatabase(":memory:"));
+function makeLedger(pool: Pool): Ledger {
+  return new PostgresLedger(pool);
 }
 
 function makeTranscriptFetcher(): TranscriptFetcher {
@@ -134,9 +133,27 @@ function video(id: string, title: string, publishedAt: string): YouTubeVideo {
 }
 
 describe("createIngestion", () => {
+  let pool: Pool;
+
+  beforeAll(async () => {
+    pool = createPgPool({
+      databaseUrl: process.env.DATABASE_URL ?? "postgres://postgres:postgres@localhost:5432/youtube_index",
+    });
+    await applyPgSchema(pool);
+  });
+
+  beforeEach(async () => {
+    await pool.query("DELETE FROM channels WHERE id = $1", [CHANNEL_ID]);
+  });
+
+  afterAll(async () => {
+    await pool.query("DELETE FROM channels WHERE id = $1", [CHANNEL_ID]);
+    await closePgPool(pool);
+  });
+
   describe("Fase de Vídeos (via _runPhase seam)", () => {
     it("roda a Fase de Vídeos contra o YouTubeClient fake e grava os Vídeos no Ledger", async () => {
-      const ledger = makeLedger();
+      const ledger = makeLedger(pool);
       await ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
       const { logger, events } = makeRecordingLogger();
       const ingestion = createIngestion({
@@ -180,7 +197,7 @@ describe("createIngestion", () => {
     });
 
     it("captura métricas (views, likes, duração) via videos.list", async () => {
-      const ledger = makeLedger();
+      const ledger = makeLedger(pool);
       await ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
       const ingestion = makeIngestion(
         makeYouTubeClient(
@@ -199,7 +216,7 @@ describe("createIngestion", () => {
     });
 
     it("percorre a playlist de uploads página a página até esgotar", async () => {
-      const ledger = makeLedger();
+      const ledger = makeLedger(pool);
       await ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
       const ingestion = makeIngestion(
         makeYouTubeClient(
@@ -223,7 +240,7 @@ describe("createIngestion", () => {
     });
 
     it("não duplica Vídeos quando re-executado (dedupe por id)", async () => {
-      const ledger = makeLedger();
+      const ledger = makeLedger(pool);
       await ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
       const ingestion = makeIngestion(
         makeYouTubeClient(
@@ -240,7 +257,7 @@ describe("createIngestion", () => {
     });
 
     it("pula Vídeos sem métricas (removidos/indisponíveis) sem derrubar a Fase", async () => {
-      const ledger = makeLedger();
+      const ledger = makeLedger(pool);
       await ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
       const { logger, events } = makeRecordingLogger();
       const ingestion = createIngestion({
@@ -282,7 +299,7 @@ describe("createIngestion", () => {
 
   describe("Fase de Comentários (via _runPhase seam)", () => {
     async function makeChannelWithVideos(): Promise<{ ledger: Ledger; ingestion: ReturnType<typeof makeIngestion> }> {
-      const ledger = makeLedger();
+      const ledger = makeLedger(pool);
       await ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
       const ingestion = makeIngestion(
         makeYouTubeClient(
@@ -384,7 +401,7 @@ describe("createIngestion", () => {
 
   describe("Fase de Transcrições (via _runPhase seam)", () => {
     async function makeChannelWithVideos(): Promise<{ ledger: Ledger; ingestion: ReturnType<typeof makeIngestion> }> {
-      const ledger = makeLedger();
+      const ledger = makeLedger(pool);
       await ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
       const ingestion = makeIngestion(
         makeYouTubeClient(
@@ -557,7 +574,7 @@ describe("createIngestion", () => {
     });
 
     it('variant "error" de um Vídeo não envenena o Canal: runJob marca a Fase failed e permanece resumível', async () => {
-      const ledger = makeLedger();
+      const ledger = makeLedger(pool);
       await ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
       // Pré-popula Vídeos e marca as Fases de Vídeos e Comentários como
       // completed, para que runJob retome direto na Fase de Transcrições.
@@ -621,7 +638,7 @@ describe("createIngestion", () => {
 
   describe("runJob", () => {
     it("marca o Canal como ingesting durante a Fase e completed ao final", async () => {
-      const ledger = makeLedger();
+      const ledger = makeLedger(pool);
       await ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
       const ingestion = makeIngestion(
         makeYouTubeClient(
@@ -639,7 +656,7 @@ describe("createIngestion", () => {
     });
 
     it("marca o Canal como failed quando a Fase de Vídeos falha", async () => {
-      const ledger = makeLedger();
+      const ledger = makeLedger(pool);
       await ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
       const failingYoutube: YouTubeClient = {
         resolveHandle: async () => ({ channelId: CHANNEL_ID, title: "Funky Black Cat" }),
@@ -667,7 +684,7 @@ describe("createIngestion", () => {
     });
 
     it("registra eventos estruturados de cada Fase na ordem de execução", async () => {
-      const ledger = makeLedger();
+      const ledger = makeLedger(pool);
       await ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
       const events: Array<{ event: string; data: Record<string, unknown> }> = [];
       const logger = {
@@ -727,7 +744,7 @@ describe("createIngestion", () => {
 
     describe("Fase de Vídeos em Sincronização (via _runPhase seam)", () => {
       it("para no primeiro Vídeo já conhecido e não re-busca métricas de Vídeos ingeridos", async () => {
-        const ledger = makeLedger();
+        const ledger = makeLedger(pool);
         await makeChannel(ledger);
         const first = makeIngestion(
           makeYouTubeClient([{ videos: [video("v1", "Antigo", daysAgo(200))], nextPageToken: null }], {
@@ -762,7 +779,7 @@ describe("createIngestion", () => {
       });
 
       it("no resume após falha, percorre a playlist sem re-buscar métricas de Vídeos já ingeridos", async () => {
-        const ledger = makeLedger();
+        const ledger = makeLedger(pool);
         await makeChannel(ledger);
         await ledger.upsertVideo({
           id: "v1",
@@ -833,7 +850,7 @@ describe("createIngestion", () => {
       }
 
       it("pula Vídeos já ingeridos (com Comentários ou ausência marcada) e processa só o pendente", async () => {
-        const ledger = makeLedger();
+        const ledger = makeLedger(pool);
         await makeChannelWithVideos(ledger);
         await ledger.upsertComment({
           id: "c1",
@@ -871,7 +888,7 @@ describe("createIngestion", () => {
       });
 
       it("na Sincronização re-busca apenas Comentários de Vídeos recentes e substitui os antigos", async () => {
-        const ledger = makeLedger();
+        const ledger = makeLedger(pool);
         await makeChannel(ledger);
         await ledger.upsertVideo({
           id: "v1",
@@ -939,7 +956,7 @@ describe("createIngestion", () => {
       });
 
       it("respeita a janela de recência configurável na Sincronização", async () => {
-        const ledger = makeLedger();
+        const ledger = makeLedger(pool);
         await makeChannel(ledger);
         for (const [id, days] of [
           ["v1", 3],
@@ -972,7 +989,7 @@ describe("createIngestion", () => {
       });
 
       it("marca Vídeos com Comentários desativados e vazios como ausência no Ledger", async () => {
-        const ledger = makeLedger();
+        const ledger = makeLedger(pool);
         await makeChannel(ledger);
         for (const [id, days] of [
           ["v1", 10],
@@ -1007,7 +1024,7 @@ describe("createIngestion", () => {
 
     describe("Fase de Transcrições em resume (via _runPhase seam)", () => {
       it("pula Vídeos com Transcrição já ingerida (Segmentos ou ausência marcada)", async () => {
-        const ledger = makeLedger();
+        const ledger = makeLedger(pool);
         await makeChannel(ledger);
         for (const [id, days] of [
           ["v1", 10],
@@ -1056,7 +1073,7 @@ describe("createIngestion", () => {
 
     describe("runJob em resume", () => {
       it("retoma a Fase que falhou sem reprocessar o que já foi ingerido", async () => {
-        const ledger = makeLedger();
+        const ledger = makeLedger(pool);
         await makeChannel(ledger);
         const videos = [
           video("v3", "Recente", daysAgo(1)),
@@ -1140,7 +1157,7 @@ describe("createIngestion", () => {
       });
 
       it("no resume da Fase de Vídeos, total é a contagem de Vídeos no Ledger (não o done)", async () => {
-        const ledger = makeLedger();
+        const ledger = makeLedger(pool);
         await makeChannel(ledger);
         // Ledger já tem 2 Vídeos de uma ingestão anterior concluída
         for (const [id, days] of [
@@ -1198,7 +1215,7 @@ describe("createIngestion", () => {
 
     describe("runJob em Sincronização (via runJob seam)", () => {
       it("chama runJob duas vezes: a segunda chamada re-roda só as Fases recentes e emite os eventos correspondentes", async () => {
-        const ledger = makeLedger();
+        const ledger = makeLedger(pool);
         await makeChannel(ledger);
         const videos = [
           video("v1", "Recente", daysAgo(10)),
@@ -1279,7 +1296,7 @@ describe("createIngestion", () => {
     }
 
     it("chama os runs do registry na ordem e marca o Canal como completed", async () => {
-      const ledger = makeLedger();
+      const ledger = makeLedger(pool);
       await ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
 
       const videosRun = vi.fn(async () => {});
@@ -1308,7 +1325,7 @@ describe("createIngestion", () => {
     });
 
     it("quando um run lança, marca a Fase e o Canal como failed e relança", async () => {
-      const ledger = makeLedger();
+      const ledger = makeLedger(pool);
       await ledger.createChannel({ channelId: CHANNEL_ID, handle: "@funkyblackcat", title: "Funky Black Cat" });
 
       const boom = new Error("falha na fase comments");

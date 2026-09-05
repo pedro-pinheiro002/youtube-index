@@ -1,15 +1,85 @@
 import type pg from "pg";
 import type { ChannelStatus, ChannelWithPhases, PhaseKey, PhaseProgress } from "./types.js";
 import { PHASES } from "./phases.js";
-import type {
-  CommentAbsenceReason,
-  CommentRecord,
-  CreateChannelInput,
-  Ledger,
-  TranscriptSegmentRecord,
-  VideoContext,
-  VideoRecord,
-} from "./ledger.js";
+
+export interface CreateChannelInput {
+  channelId: string;
+  handle: string;
+  title: string;
+}
+
+export interface VideoRecord {
+  id: string;
+  channelId: string;
+  title: string;
+  description: string;
+  publishedAt: string;
+  views: number;
+  likes: number;
+  durationSeconds: number;
+}
+
+/** O contexto canônico de um Vídeo usado para compor Documentos de Comentário e Segmento. */
+export interface VideoContext {
+  id: string;
+  title: string;
+  views: number;
+  likes: number;
+  publishedAt: string;
+}
+
+export interface CommentRecord {
+  id: string;
+  videoId: string;
+  channelId: string;
+  author: string;
+  text: string;
+  likes: number;
+  publishedAt: string;
+}
+
+export interface TranscriptSegmentRecord {
+  id: string;
+  videoId: string;
+  channelId: string;
+  start: number;
+  end: number;
+  text: string;
+}
+
+export type CommentAbsenceReason = "disabled" | "none";
+
+export interface Ledger {
+  createChannel(input: CreateChannelInput): Promise<ChannelWithPhases>;
+  getChannel(channelId: string): Promise<ChannelWithPhases | null>;
+  listChannels(): Promise<ChannelWithPhases[]>;
+  setChannelStatus(channelId: string, status: ChannelStatus): Promise<void>;
+  setChannelError(channelId: string, message: string): Promise<void>;
+  clearChannelError(channelId: string): Promise<void>;
+  updatePhase(
+    channelId: string,
+    phase: PhaseKey,
+    update: Partial<Pick<PhaseProgress, "status" | "done" | "total">>,
+  ): Promise<void>;
+  deleteChannel(channelId: string): Promise<void>;
+  upsertVideo(video: VideoRecord): Promise<void>;
+  hasVideo(videoId: string): Promise<boolean>;
+  videoContext(videoId: string): Promise<VideoContext | null>;
+  listVideos(channelId: string): Promise<VideoRecord[]>;
+  upsertComment(comment: CommentRecord): Promise<void>;
+  deleteCommentsForVideo(videoId: string): Promise<void>;
+  hasCommentIngestion(videoId: string): Promise<boolean>;
+  markCommentAbsence(videoId: string, reason: CommentAbsenceReason): Promise<void>;
+  clearCommentAbsence(videoId: string): Promise<void>;
+  listCommentAbsences(channelId: string): Promise<string[]>;
+  listComments(channelId: string): Promise<CommentRecord[]>;
+  upsertTranscriptSegment(segment: TranscriptSegmentRecord): Promise<void>;
+  hasTranscriptIngestion(videoId: string): Promise<boolean>;
+  listTranscriptSegments(channelId: string): Promise<TranscriptSegmentRecord[]>;
+  markTranscriptAbsent(videoId: string): Promise<void>;
+  listTranscriptAbsences(channelId: string): Promise<string[]>;
+  deleteTranscriptSegmentsForVideo(videoId: string): Promise<void>;
+}
 
 interface ChannelRow {
   id: string;

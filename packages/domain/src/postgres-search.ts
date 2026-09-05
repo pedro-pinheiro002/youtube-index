@@ -3,7 +3,7 @@ import type { SearchHit, SearchParams, SearchPort, SearchResponse, SearchSort } 
 import type { Documento, Projection, ProjectionHit, SearchDocumentType } from "./documento.js";
 import { toCommentDocument, toSegmentDocument, toVideoDocument } from "./documento.js";
 import { PostgresLedger } from "./postgres-ledger.js";
-import type { VideoContext } from "./ledger.js";
+import type { VideoContext } from "./postgres-ledger.js";
 
 const DEFAULT_LIMIT = 20;
 const TRGM_SIMILARITY_THRESHOLD = 0.3;

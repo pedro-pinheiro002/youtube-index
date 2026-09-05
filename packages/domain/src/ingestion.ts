@@ -1,4 +1,4 @@
-import type { CommentRecord, Ledger, TranscriptSegmentRecord, VideoRecord } from "./ledger.js";
+import type { CommentRecord, Ledger, TranscriptSegmentRecord, VideoRecord } from "./postgres-ledger.js";
 import type { TranscriptFetcher } from "./transcripts.js";
 import type { PhaseKey, PhaseStatus } from "./types.js";
 import { PHASES, type Phase } from "./phases.js";

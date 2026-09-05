@@ -19,7 +19,7 @@ async function main(): Promise<void> {
 
   const pool = createPgPool({ databaseUrl: config.databaseUrl });
   const services = await createServices({
-    db: pool,
+    pool,
     config: {
       youtubeApiKey: config.youtubeApiKey,
     },

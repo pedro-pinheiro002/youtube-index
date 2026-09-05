@@ -1,19 +1,15 @@
-import type { DatabaseSync } from "node:sqlite";
 import type pg from "pg";
-import type { Ledger } from "./ledger.js";
+import type { Ledger } from "./postgres-ledger.js";
 import type { IngestionQueue } from "./ingestion-queue.js";
 import type { YouTubeClient } from "./youtube.js";
 import type { TranscriptFetcher } from "./transcripts.js";
 import type { Projection } from "./documento.js";
 import type { SearchPort } from "./search.js";
 import type { Ingestion, IngestionLogger } from "./ingestion.js";
-import { SqliteLedger } from "./ledger.js";
 import { PostgresLedger } from "./postgres-ledger.js";
-import { SqliteIngestionQueue } from "./ingestion-queue.js";
 import { PostgresIngestionQueue } from "./postgres-queue.js";
 import { YouTubeDataApiClient } from "./youtube.js";
 import { YoutubeTranscriptFetcher } from "./transcripts.js";
-import { createMeilisearchProjection } from "./meilisearch.js";
 import { PostgresSearchProjection } from "./postgres-search.js";
 import { createIngestion } from "./ingestion.js";
 
@@ -26,17 +22,6 @@ export class MissingConfigError extends Error {
 
 export interface ServicesConfig {
   youtubeApiKey: string;
-  /**
-   * @deprecated Removido em slice #48 (Collapse legacy). Mantido
-   * opcional apenas para que o caminho SQLite+Meilisearch continue
-   * funcionando durante a transição (slice #45/#47); o caminho
-   * Postgres ignora esses campos.
-   */
-  meilisearchUrl?: string;
-  /**
-   * @deprecated Veja `meilisearchUrl`.
-   */
-  meilisearchMasterKey?: string;
   recentWindowDays?: number;
 }
 
@@ -51,62 +36,31 @@ export interface Services {
 }
 
 export interface CreateServicesParams {
-  db: DatabaseSync | pg.Pool;
+  pool: pg.Pool;
   config: ServicesConfig;
   logger?: IngestionLogger;
-  fetchImpl?: typeof fetch;
 }
 
 /**
- * Detecta `pg.Pool` por duck typing em vez de comparar `constructor.name`
- * (que na versão ESM de `node-postgres` retorna `"BoundPool"`, não
- * `"Pool"`) ou `instanceof pg.Pool` (que exigiria importar `pg` em
- * runtime). `DatabaseSync` (node:sqlite) não tem `.query`/`connect`,
- * então a presença do método basta.
+ * Constrói os serviços em torno do Postgres (único backend, slice #48).
+ * A coluna `fts` (tsvector gerado) é o Índice de Busca — não há
+ * Projeção externa — então a mesma instância de `PostgresSearchProjection`
+ * serve para `projection` (no-op, satisfaz o contrato da Ingestão) e
+ * para `search`.
  */
-function isPgPool(db: DatabaseSync | pg.Pool): db is pg.Pool {
-  return typeof (db as { query?: unknown }).query === "function";
-}
-
-function selectLedger(db: DatabaseSync | pg.Pool): Ledger {
-  if (isPgPool(db)) {
-    return new PostgresLedger(db);
-  }
-  return new SqliteLedger(db);
-}
-
-function selectQueue(db: DatabaseSync | pg.Pool): IngestionQueue {
-  if (isPgPool(db)) {
-    return new PostgresIngestionQueue(db);
-  }
-  return new SqliteIngestionQueue(db);
-}
-
 export async function createServices(params: CreateServicesParams): Promise<Services> {
-  const { db, config, logger, fetchImpl } = params;
+  const { pool, config, logger } = params;
 
   if (!config.youtubeApiKey) {
     throw new MissingConfigError("youtubeApiKey");
   }
 
-  const ledger = selectLedger(db);
-  const queue = selectQueue(db);
-
+  const ledger = new PostgresLedger(pool);
+  const queue = new PostgresIngestionQueue(pool);
   const youtube = new YouTubeDataApiClient(config.youtubeApiKey);
   const transcripts = new YoutubeTranscriptFetcher();
 
-  // No caminho Postgres (slice #45) a própria coluna `fts` gerada pelo
-  // `PostgresLedger` é o Índice — não há Projeção externa. No caminho
-  // SQLite o MeilisearchProjection segue como Projeção+Busca. A
-  // `ServicesConfig` mantém `meilisearchUrl`/`meilisearchMasterKey`
-  // apenas para o caminho SQLite, e ambos serão removidos no slice
-  // #48 (Collapse legacy).
-  const postgresSearch = isPgPool(db) ? new PostgresSearchProjection(db) : null;
-  const projection: Projection & SearchPort = postgresSearch ?? (await createMeilisearchProjection({
-    url: config.meilisearchUrl ?? "",
-    masterKey: config.meilisearchMasterKey ?? "",
-    fetchImpl,
-  }));
+  const projection: Projection & SearchPort = new PostgresSearchProjection(pool);
 
   const ingestion = createIngestion({
     youtube,
@@ -116,9 +70,6 @@ export async function createServices(params: CreateServicesParams): Promise<Serv
     recentWindowDays: config.recentWindowDays,
   });
 
-  // PostgresSearchProjection e MeilisearchProjection implementam ambos
-  // os contratos (SearchPort e Projection), então a mesma instância
-  // serve para a Busca e para a Projeção.
   const search: SearchPort = projection;
 
   return { ledger, queue, youtube, transcripts, projection, ingestion, search };

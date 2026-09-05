@@ -18,16 +18,14 @@ export type {
   TranscriptSegmentRecord,
   VideoContext,
   VideoRecord,
-} from "./ledger.js";
-export { SqliteLedger } from "./ledger.js";
-export { applySchema, createDatabase, openDatabase, SCHEMA } from "./schema.js";
+} from "./postgres-ledger.js";
 export type { Ingestion, IngestionDeps, IngestionLogger } from "./ingestion.js";
 export { createIngestion, createPhases } from "./ingestion.js";
 export type { JobRunnerDeps } from "./job-runner.js";
 export { runNextJob } from "./job-runner.js";
 export { JobListener } from "./job-listener.js";
 export type { IngestionQueue } from "./ingestion-queue.js";
-export { SqliteIngestionQueue } from "./ingestion-queue.js";
+export type { IngestionJobRow, mapIngestionJobRow as _mapIngestionJobRow } from "./ingestion-queue.js";
 export { PostgresIngestionQueue } from "./postgres-queue.js";
 export type {
   CommentSearchDocument,
@@ -55,8 +53,6 @@ export {
 } from "./documento.js";
 export type { SearchHit, SearchParams, SearchPort, SearchResponse, SearchSort } from "./search.js";
 export { rebuildFts, rebuildFtsInPool } from "./rebuild-fts.js";
-export type { MeilisearchConfig } from "./meilisearch.js";
-export { createMeilisearchProjection, MeilisearchError, MeilisearchProjection } from "./meilisearch.js";
 export type { CreateServicesParams, Services, ServicesConfig } from "./services.js";
 export { createServices, MissingConfigError } from "./services.js";
 export type { CreatePgPoolParams } from "./postgres.js";

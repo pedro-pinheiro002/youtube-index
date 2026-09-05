@@ -63,7 +63,9 @@ describe("POSTGRES in-process worker (slice #47)", () => {
     const listener = new JobListener(pool, {
       onNotify: () => {
         ticks += 1;
-        return runNextJob({ queue, ingestion }).catch(() => undefined);
+        return runNextJob({ queue, ingestion })
+          .then(() => undefined)
+          .catch(() => undefined);
       },
       logger: { info: () => {}, error: () => {} },
     });

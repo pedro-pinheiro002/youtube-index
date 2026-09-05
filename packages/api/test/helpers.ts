@@ -1,6 +1,4 @@
-import { createDatabase, SqliteIngestionQueue, SqliteLedger } from "@youtube-index/domain";
 import type { IngestionQueue, Ledger, SearchParams, SearchPort, SearchResponse, YouTubeClient } from "@youtube-index/domain";
-import type { DatabaseSync } from "node:sqlite";
 import type { AppConfig } from "../src/config.js";
 
 export function makeConfig(overrides: Partial<AppConfig> = {}): AppConfig {
@@ -16,17 +14,12 @@ export function makeConfig(overrides: Partial<AppConfig> = {}): AppConfig {
   };
 }
 
-export function makeDb(): DatabaseSync {
-  return createDatabase(":memory:");
-}
-
-export function makeLedger(db: DatabaseSync = makeDb()): Ledger {
-  return new SqliteLedger(db);
-}
-
-export function makeQueue(db: DatabaseSync = makeDb()): IngestionQueue {
-  return new SqliteIngestionQueue(db);
-}
+// Os testes da api compartilham Postgres (slice #48). `makeLedger` /
+// `makeQueue` retornam tipos — não instâncias — para deixar claro que
+// cada teste deve construir os seus a partir de um `pg.Pool` próprio
+// (ver channels.postgres.test.ts e search.postgres.test.ts). Os
+// testes HTTP-level injetam stubs (makeStubQueue, makeStubSearch).
+export type { Ledger, IngestionQueue };
 
 export function makeSearchClient(
   results?: SearchResponse,
