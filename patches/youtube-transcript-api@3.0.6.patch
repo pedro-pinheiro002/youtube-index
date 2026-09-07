@@ -1,0 +1,13 @@
+diff --git a/src/index.js b/src/index.js
+index 2463e70463f29ad8ccc5063947dc93b628207464..fc8c550cd9477b7a4accffb2281438cea08ab3a0 100644
+--- a/src/index.js
++++ b/src/index.js
+@@ -63,7 +63,7 @@ class TranscriptClient {
+         url.searchParams.set("key", creds.apiKey);
+ 
+         return (async () => {
+-            const { data } = await this.#instance.post(url, {
++            const { data } = await this.#instance.post(url.toString(), {
+                 returnSecureToken: true
+             }, {
+                 headers: {

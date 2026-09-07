@@ -3,3 +3,6 @@ packages:
 
 allowBuilds:
   esbuild: true
+
+patchedDependencies:
+  youtube-transcript-api@3.0.6: patches/youtube-transcript-api@3.0.6.patch

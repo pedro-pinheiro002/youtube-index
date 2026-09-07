@@ -5,6 +5,7 @@ import {
   createServices,
   closePgPool,
   runNextJob,
+  applyPgSchema,
   JobListener,
   type Pool,
 } from "@youtube-index/domain";
@@ -18,6 +19,12 @@ async function main(): Promise<void> {
   }
 
   const pool = createPgPool({ databaseUrl: config.databaseUrl });
+  // Bootstrap idempotente do schema (tabelas, índices, extensão pg_trgm).
+  // Os testes já chamam `applyPgSchema` no setup; o servidor precisa
+  // fazer o mesmo para que `ingestion_jobs` exista quando o job runner
+  // começa a pollar — sem isso o primeiro `claimNext` falha com
+  // `42P01 relation does not exist` a cada tick.
+  await applyPgSchema(pool);
   const services = await createServices({
     pool,
     config: {
